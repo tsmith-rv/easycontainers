@@ -2,6 +2,7 @@ package easycontainers
 
 import (
 	"bytes"
+	"errors"
 	"math/rand"
 	"os/exec"
 	"strings"
@@ -11,8 +12,6 @@ import (
 	"os"
 
 	"go/build"
-
-	"github.com/go-errors/errors"
 )
 
 func init() {

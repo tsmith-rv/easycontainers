@@ -2,6 +2,7 @@ package easycontainers
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -10,8 +11,6 @@ import (
 	"path"
 	"strconv"
 	"strings"
-
-	"github.com/go-errors/errors"
 )
 
 // MySQL is a container using the official mysql docker image.
