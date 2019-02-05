@@ -19,7 +19,6 @@ I wrote this package. It basically wraps the necessary docker commands for spinn
 Using a MySQL container
 
 ```go
-// starts the container
 mysqlContainer, port := easycontainers.NewMySQL("test-container", "blog.posts")
 
 // there is also a NewMySQLWithPort function if you want to use a specific port
@@ -40,9 +39,7 @@ if err != nil {
 Using RabbitMQ and MySQL
 
 ```go
-// starts the container
 mysqlContainer, mysqlPort := easycontainers.NewMySQL("test-container-mysql", "blog.posts")
-
 rabbitContainer, rabbitPort := easycontainers.NewRabbitMQ("test-container-rabbit")
 
 // there is also a NewMySQLWithPort function if you want to use a specific port
