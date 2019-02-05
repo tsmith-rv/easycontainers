@@ -9,6 +9,9 @@ import (
 	"os/exec"
 	"path"
 	"strconv"
+	"strings"
+
+	"github.com/go-errors/errors"
 )
 
 // MySQL is a container using the official mysql docker image.
@@ -78,6 +81,14 @@ func (m *MySQL) Container(f func() error) error {
 	cmdList = append(cmdList, runContainerCmd)
 
 	if m.Path != "" {
+		if !strings.HasSuffix(m.Path, ".sh") &&
+			!strings.HasSuffix(m.Path, ".sql") &&
+			!strings.HasSuffix(m.Path, ".sql.gz") {
+			return errors.New(
+				"file specified by Path should have an extension of .sh, .sql, or .sql.gz or it won't be run during initialization",
+			)
+		}
+
 		cmdList = append(cmdList, exec.Command(
 			"/bin/bash",
 			"-c",
