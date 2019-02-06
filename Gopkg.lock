@@ -8,6 +8,15 @@
   version = "v1.4.1"
 
 [[projects]]
+  name = "github.com/jmoiron/sqlx"
+  packages = [
+    ".",
+    "reflectx"
+  ]
+  revision = "d161d7a76b5661016ad0b085869f77fd410f3e6a"
+  version = "v1.2.0"
+
+[[projects]]
   name = "google.golang.org/appengine"
   packages = ["cloudsql"]
   revision = "e9657d882bb81064595ca3b56cbe2546bbabf7b1"
@@ -16,6 +25,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "bbf6179d42ade2863b20e3d15a2d78c0cc9168f2cfbc5658dedd0584e9146a95"
+  inputs-digest = "862055ce4913f1e28c0cda34d984a29c558aa23ed39b8cc80d7e58a38d249db6"
   solver-name = "gps-cdcl"
   solver-version = 1
