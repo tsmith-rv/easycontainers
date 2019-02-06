@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path"
-	"strconv"
 	"strings"
 )
 
@@ -100,7 +99,7 @@ func (m *MySQL) Container(f func() error) error {
 	}
 
 	if m.Query != "" {
-		fileName := strconv.Itoa(rand.Intn(100000)*2) + ".sql"
+		fileName := "injected_query.sql"
 
 		file, err := os.Create(fileName)
 		if err != nil {

@@ -32,12 +32,33 @@ type post struct {
 
 func Test_MySQL_Container(t *testing.T) {
 	container, port := easycontainers.NewMySQL("test-container", "blog.posts")
-	if port < 5000 || port > 6000 {
-		t.Error(errors.New("port should be with the range of 5000-6000"))
+
+	if !assert.True(t, port >= 5000 && port <= 6000) {
+		t.Error(errors.New("port should be within range 5000-6000"))
 		return
 	}
 
+	// this tests that data is loading properly from Path and Query
+	// - Path is loading the authors
+	// - Query is loading the posts
 	container.Path = "/src/github.com/RedVentures/easycontainers/test/mysql-test.sql"
+	container.Query = `
+		CREATE DATABASE IF NOT EXISTS blog;
+	
+		CREATE TABLE blog.posts (
+		  id int(11) NOT NULL AUTO_INCREMENT,
+		  author_id int(11) NOT NULL,
+		  title varchar(255) COLLATE utf8_unicode_ci NOT NULL,
+		  description varchar(500) COLLATE utf8_unicode_ci NOT NULL,
+		  content text COLLATE utf8_unicode_ci NOT NULL,
+		  date varchar(50) COLLATE utf8_unicode_ci NOT NULL,
+		  PRIMARY KEY (id)
+		) ENGINE=InnoDB AUTO_INCREMENT=101 DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
+		
+		INSERT INTO blog.posts (id, author_id, title, description, content, date) VALUES (1, 1, 'Cupiditate ducimus magni error aspernatur quam eaque officia recusandae.', 'Eligendi quo harum in laboriosam voluptatum ut nemo ex. Et sapiente magni praesentium libero. Et sunt et veritatis unde quos perspiciatis amet ut.', 'Asperiores rerum harum laborum at qui quae quia. Iusto aliquam sapiente nesciunt laboriosam expedita. Eos qui delectus dolorum eligendi ipsam ad.', '1975-07-21');
+		INSERT INTO blog.posts (id, author_id, title, description, content, date) VALUES (2, 2, 'Dignissimos eius voluptatem aliquid ab nostrum facere saepe voluptatem.', 'Dolorem aut et inventore rem. Ut eius eveniet qui. Error velit ea corrupti voluptas laboriosam aliquam. Blanditiis aliquam voluptas consequatur quas voluptatem.', 'Delectus qui non nesciunt ut sit omnis a. Mollitia iste ullam illum ipsam. At et voluptatibus dolores repudiandae officiis.', '1996-01-10');
+		INSERT INTO blog.posts (id, author_id, title, description, content, date) VALUES (3, 3, 'Voluptas modi consequatur est id.', 'Sit culpa nemo repudiandae sint minus id. Velit eveniet aliquam tempora modi. Laboriosam molestiae ut aut omnis.', 'Qui et est recusandae qui ut in nesciunt. Maxime dolorem eligendi consectetur est dicta excepturi. Incidunt ut vel necessitatibus.', '1996-03-21');
+	`
 
 	err := container.Container(func() error {
 		db, err := sqlx.Connect(
@@ -51,7 +72,8 @@ func Test_MySQL_Container(t *testing.T) {
 			),
 		)
 		if err != nil {
-			return err
+			t.Error(err)
+			return nil
 		}
 
 		expectedAuthors := []author{
@@ -127,13 +149,15 @@ func Test_MySQL_Container(t *testing.T) {
 		actualAuthors := make([]author, 0)
 		err = db.Select(&actualAuthors, "SELECT * FROM blog.authors")
 		if err != nil {
-			return err
+			t.Error(err)
+			return nil
 		}
 
 		actualPosts := make([]post, 0)
 		err = db.Select(&actualPosts, "SELECT * FROM blog.posts")
 		if err != nil {
-			return err
+			t.Error(err)
+			return nil
 		}
 
 		if !assert.Equal(t, expectedAuthors, actualAuthors) {
