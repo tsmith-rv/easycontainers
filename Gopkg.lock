@@ -2,6 +2,12 @@
 
 
 [[projects]]
+  name = "github.com/davecgh/go-spew"
+  packages = ["spew"]
+  revision = "8991bc29aa16c548c550c7ff78260e27b9ab7c73"
+  version = "v1.1.1"
+
+[[projects]]
   name = "github.com/go-sql-driver/mysql"
   packages = ["."]
   revision = "72cd26f257d44c1114970e19afddcd812016007e"
@@ -17,6 +23,18 @@
   version = "v1.2.0"
 
 [[projects]]
+  name = "github.com/pmezard/go-difflib"
+  packages = ["difflib"]
+  revision = "792786c7400a136282c1664665ae0a8db921c6c2"
+  version = "v1.0.0"
+
+[[projects]]
+  name = "github.com/stretchr/testify"
+  packages = ["assert"]
+  revision = "ffdc059bfe9ce6a4e144ba849dbedead332c6053"
+  version = "v1.3.0"
+
+[[projects]]
   name = "google.golang.org/appengine"
   packages = ["cloudsql"]
   revision = "e9657d882bb81064595ca3b56cbe2546bbabf7b1"
@@ -25,6 +43,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "862055ce4913f1e28c0cda34d984a29c558aa23ed39b8cc80d7e58a38d249db6"
+  inputs-digest = "12de9de78b14bf85e7d9658a5345185af0310425eebb38a6061e2be25097cf6c"
   solver-name = "gps-cdcl"
   solver-version = 1
