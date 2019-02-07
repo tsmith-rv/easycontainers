@@ -34,7 +34,7 @@ func NewMySQL(name string) (r *MySQL, port int) {
 	port = 5000 + rand.Intn(1000)
 
 	return &MySQL{
-		ContainerName: "mysql-" + name,
+		ContainerName: prefix + "mysql-" + name,
 		Port:          port,
 	}, port
 }
@@ -42,7 +42,7 @@ func NewMySQL(name string) (r *MySQL, port int) {
 // NewMySQLWithPort returns a new instance of MySQL using the specified port.
 func NewMySQLWithPort(name string, port int) *MySQL {
 	return &MySQL{
-		ContainerName: "mysql-" + name,
+		ContainerName: prefix + "mysql-" + name,
 		Port:          port,
 	}
 }
@@ -50,8 +50,6 @@ func NewMySQLWithPort(name string, port int) *MySQL {
 // Container spins up the mysql container and runs. When the method exits, the
 // container is stopped and removed.
 func (m *MySQL) Container(f func() error) error {
-	containers[m.ContainerName] = struct{}{}
-
 	CleanupContainer(m.ContainerName) // catch containers that previous cleanup missed
 	defer CleanupContainer(m.ContainerName)
 

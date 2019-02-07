@@ -109,7 +109,7 @@ func NewLocalstack(name string, services ...string) (r *Localstack, portMap map[
 	}
 
 	return &Localstack{
-		ContainerName: "localstack-" + name,
+		ContainerName: prefix + "localstack-" + name,
 		PortBindings:  portBindings,
 		Services:      services,
 	}, portMap
@@ -126,7 +126,7 @@ func NewLocalstackWithPortMap(name string, portMap map[string]int, services ...s
 	}
 
 	return &Localstack{
-		ContainerName: "localstack-" + name,
+		ContainerName: prefix + "localstack-" + name,
 		PortBindings:  portBindings,
 		Services:      services,
 	}
@@ -145,8 +145,6 @@ func (l *Localstack) AddSQSQueue(name string, messages []string) *Localstack {
 // Container spins up the localstack container and runs. When the method exits, the
 // container is stopped and removed.
 func (l *Localstack) Container(f func() error) error {
-	containers[l.ContainerName] = struct{}{}
-
 	CleanupContainer(l.ContainerName) // catch containers that previous cleanup missed
 	defer CleanupContainer(l.ContainerName)
 

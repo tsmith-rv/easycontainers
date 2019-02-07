@@ -16,10 +16,12 @@ import (
 	"syscall"
 )
 
-var containers = make(map[string]struct{})
+const prefix = "easycontainers-"
 
 func init() {
 	rand.Seed(time.Now().Unix())
+
+	CleanupAllContainers()
 
 	signalCh := make(chan os.Signal, 1024)
 	signal.Notify(signalCh, syscall.SIGHUP, syscall.SIGUSR2, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGKILL)
@@ -27,9 +29,7 @@ func init() {
 	go func() {
 		<-signalCh
 
-		for name := range containers {
-			CleanupContainer(name)
-		}
+		CleanupAllContainers()
 	}()
 }
 
@@ -43,6 +43,25 @@ func GoPath() string {
 	}
 
 	return s
+}
+
+// CleanupAllContainers will stop all containers starting with prefix
+func CleanupAllContainers() error {
+	cmd := exec.Command(
+		"docker",
+		"stop",
+		prefix,
+	)
+
+	var b bytes.Buffer
+	cmd.Stderr = &b
+
+	err := cmd.Run()
+	if err != nil {
+		return fmt.Errorf("error in command : %s -- %s", err, b.String())
+	}
+
+	return err
 }
 
 // CleanupContainer stops the container with the specified name.

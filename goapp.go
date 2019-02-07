@@ -34,7 +34,7 @@ func NewGoApp(name, appDir, buildDir string) (r *GoApp, port int) {
 	port = 5000 + rand.Intn(1000)
 
 	return &GoApp{
-		ContainerName: path.Base(buildDir) + "-goapp-" + name,
+		ContainerName: prefix + path.Base(buildDir) + "-goapp-" + name,
 		Port:          port,
 		AppDir:        path.Join(GoPath(), appDir),
 		BuildDir:      buildDir,
@@ -44,7 +44,7 @@ func NewGoApp(name, appDir, buildDir string) (r *GoApp, port int) {
 // NewGoAppWithPort returns a new instance of MySQL using the specified port.
 func NewGoAppWithPort(name string, port int, app, binary string) *GoApp {
 	return &GoApp{
-		ContainerName: path.Base(binary) + "-goapp-" + name,
+		ContainerName: prefix + path.Base(binary) + "-goapp-" + name,
 		Port:          port,
 		AppDir:        path.Join(GoPath(), app),
 		BuildDir:      binary,
@@ -54,8 +54,6 @@ func NewGoAppWithPort(name string, port int, app, binary string) *GoApp {
 // Container spins up the application container and runs. When the method exits, the
 // container is stopped and removed.
 func (g *GoApp) Container(f func() error) error {
-	containers[g.ContainerName] = struct{}{}
-
 	CleanupContainer(g.ContainerName)
 	defer CleanupContainer(g.ContainerName)
 

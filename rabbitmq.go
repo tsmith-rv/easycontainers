@@ -60,7 +60,7 @@ func NewRabbitMQ(name string) (r *RabbitMQ, port int) {
 	port = 5000 + rand.Intn(1000)
 
 	return &RabbitMQ{
-		ContainerName: "rabbit-" + name,
+		ContainerName: prefix + "rabbit-" + name,
 		Port:          port,
 	}, port
 }
@@ -68,7 +68,7 @@ func NewRabbitMQ(name string) (r *RabbitMQ, port int) {
 // NewRabbitMQWithPort returns a new instance of RabbitMQ using the specified port.
 func NewRabbitMQWithPort(name string, port int) *RabbitMQ {
 	return &RabbitMQ{
-		ContainerName: "rabbit-" + name,
+		ContainerName: prefix + "rabbit-" + name,
 		Port:          port,
 	}
 }
@@ -79,8 +79,6 @@ func NewRabbitMQWithPort(name string, port int) *RabbitMQ {
 // The RabbitMQ components will be created in the following order:
 // Vhosts -> Exchanges -> Queues -> Bindings
 func (r *RabbitMQ) Container(f func() error) error {
-	containers[r.ContainerName] = struct{}{}
-
 	CleanupContainer(r.ContainerName)
 	defer CleanupContainer(r.ContainerName)
 
