@@ -4,13 +4,14 @@ import (
 	"fmt"
 	"math/rand"
 	"os/exec"
+	"time"
 )
 
 const (
 	rabbitmqadmin = "rabbitmqadmin"
 
-	// ExchangeTypeDirect ...
 	ExchangeTypeDirect = "direct"
+	ExchangeTypeFanout = "fanout"
 )
 
 // RabbitMQ is a container using the official RabbitMQ:management docker image, which already
@@ -78,8 +79,12 @@ func NewRabbitMQWithPort(name string, port int) *RabbitMQ {
 // The RabbitMQ components will be created in the following order:
 // Vhosts -> Exchanges -> Queues -> Bindings
 func (r *RabbitMQ) Container(f func() error) error {
+	containers[r.ContainerName] = struct{}{}
+
 	CleanupContainer(r.ContainerName)
 	defer CleanupContainer(r.ContainerName)
+
+	var cmdList []*exec.Cmd
 
 	runContainerCmd := exec.Command(
 		"docker",
@@ -90,18 +95,15 @@ func (r *RabbitMQ) Container(f func() error) error {
 		"--name",
 		r.ContainerName,
 		"-d",
-		"rabbitmq:management",
+		"rabbitmq:management-alpine",
 	)
+	cmdList = append(cmdList, runContainerCmd)
 
 	waitForInitializeCmd := strCmdForContainer(
 		r.ContainerName,
 		"until $(rabbitmqadmin -q list queues); do echo 'waiting for RabbitMQ container to be up'; sleep 1; done",
 	)
-
-	cmdList := []*exec.Cmd{
-		runContainerCmd,
-		waitForInitializeCmd,
-	}
+	cmdList = append(cmdList, waitForInitializeCmd)
 
 	for _, x := range r.Vhosts {
 		cmdList = append(
@@ -144,7 +146,7 @@ func (r *RabbitMQ) Container(f func() error) error {
 	}
 
 	for _, c := range cmdList {
-		err := RunCommandWithTimeout(c)
+		err := RunCommandWithTimeout(c, 1*time.Minute)
 		if err != nil {
 			return err
 		}

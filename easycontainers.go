@@ -12,10 +12,25 @@ import (
 	"os"
 
 	"go/build"
+	"os/signal"
+	"syscall"
 )
+
+var containers = make(map[string]struct{})
 
 func init() {
 	rand.Seed(time.Now().Unix())
+
+	signalCh := make(chan os.Signal, 1024)
+	signal.Notify(signalCh, syscall.SIGHUP, syscall.SIGUSR2, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGKILL)
+
+	go func() {
+		<-signalCh
+
+		for name := range containers {
+			CleanupContainer(name)
+		}
+	}()
 }
 
 // GoPath returns the value stored in the GOPATH environment variable.
@@ -53,11 +68,9 @@ func CleanupContainer(name string) error {
 
 // RunCommandWithTimeout will execute the specified cmd, but will timeout and
 // return and error after 1 minute.
-func RunCommandWithTimeout(cmd *exec.Cmd) error {
-	var (
-		timeout = time.NewTimer(1 * time.Minute)
-		finish  = make(chan error)
-	)
+func RunCommandWithTimeout(cmd *exec.Cmd, timeout time.Duration) error {
+	finish := make(chan error)
+	timer := time.NewTimer(timeout)
 
 	go func() {
 		var err error
@@ -82,7 +95,7 @@ func RunCommandWithTimeout(cmd *exec.Cmd) error {
 		if err != nil {
 			return err
 		}
-	case <-timeout.C:
+	case <-timer.C:
 		return errors.New("container timed out")
 	}
 

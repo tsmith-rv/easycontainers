@@ -1,25 +1,48 @@
 easycontainers
-============
+==============
 
 ### WTF
 I love using real services with *docker* when testing or running a quick piece of code just to see how it'll interact with an external dependency, but really hate writing scripts to spin up containers and haven't found a library that lets me abstract away all the *docker* related details in a way I like in the code. So...
 
 ### Here it is
-I wrote this package. It basically wraps the necessary docker commands for spinning up / cleanup / removal of containers for common dependencies and services I work with like:
+I wrote this package. It basically hides the necessary docker commands for spinning up / cleanup / removal of containers for common dependencies and services I work with like:
 
 - MySQL
 - RabbitMQ
+- Localstack
 - Containerized Go Apps
 
+The aim is to make it as simple and quick as possible to spin up these commonly used dependencies for testing or whatever without having to worry about:
+
+- Knowing anything about *docker*
+- Having knowledge of each docker image (and it's quirks)
+- Cleaning up or removing old containers or images
+
 ### Is there something that already does this?
-"Probably. Don't know. Don't read. Didn't watch the movie."
+The testcontainers package (https://github.com/testcontainers/testcontainers-go) does something similar, so if that is more your game, have at it, but I
+personally like the way I've done it here. Whatever works best for you.
+
+### Prerequisites
+Install *docker*. https://docs.docker.com/install/
+
+### The Hitch
+I wrote this specifically for stuff I've been testing since the Thursday before writing this, which means it isn't as thorough as it should be.
+For example, I don't have helper methods for all the AWS services in Localstack, just for SQS, because that is
+what I've been testing an application against. However, I would like to add to this until it covers a lot of
+basic use cases for different dependencies. Which leads me to my next point...
+
+### Contribute
+Open a PR! Add support for some dependency you use - common or not, or help broaden the support for the existing
+services. I have no guidelines really (which is probably bad, but whatever). I would love to get some more people
+on this. It has been really helpful to a couple of things I've been working on the past few days and I can already
+see myself using it a lot going forward.
 
 ### Examples
 
 Using a MySQL container
 
 ```go
-mysqlContainer, port := easycontainers.NewMySQL("test-container", "blog.posts")
+mysqlContainer, port := easycontainers.NewMySQL("test-container")
 
 // there is also a NewMySQLWithPort function if you want to use a specific port
 
@@ -39,13 +62,16 @@ if err != nil {
 Using RabbitMQ and MySQL
 
 ```go
-mysqlContainer, mysqlPort := easycontainers.NewMySQL("test-container-mysql", "blog.posts")
+mysqlContainer, mysqlPort := easycontainers.NewMySQL("test-container-mysql")
 rabbitContainer, rabbitPort := easycontainers.NewRabbitMQ("test-container-rabbit")
 
 // there is also a NewMySQLWithPort function if you want to use a specific port
 
 // Path to a sql file to run on container startup (path is relative to GOPATH)
 mysqlContainer.Path =  "/src/github.com/RedVentures/easycontainers/test/mysql-test.sql"
+
+// Query is just a string of sql to be run on startup as well. 
+mysqlContainer.Query = "CREATE DATABASE somedatabase;"
 
 // rabbitMQ setup
 vhost := test.Vhost{  

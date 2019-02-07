@@ -2,14 +2,15 @@ package easycontainers
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"math/rand"
 	"os"
 	"os/exec"
 	"path"
-	"strings"
+	"strconv"
+	"time"
 )
 
 // MySQL is a container using the official mysql docker image.
@@ -18,45 +19,39 @@ import (
 // the file when initializing the container.
 //
 // Query is a string of SQL. If set, it will run the sql when initializing the container.
-//
-// InitializeTable is the table to query to make sure the initialization is finished,
-// because once mysql starts in the container, the queries from Path and Query may
-// still not be finished running. If neither Path nor Query is set, you can set it to
-// information_schema.COLUMNS
 type MySQL struct {
-	ContainerName   string
-	Port            int
-	Path            string
-	Query           string
-	InitializeTable string
+	ContainerName string
+	Port          int
+	Path          string
+	Query         string
 }
 
 // NewMySQL returns a new instance of MySQL and the port it will be using, which is
 // a randomly selected number between 5000-6000.
 //
 // Conflicts are possible because it doesn't check if the port is already allocated.
-func NewMySQL(name string, initialTable string) (r *MySQL, port int) {
+func NewMySQL(name string) (r *MySQL, port int) {
 	port = 5000 + rand.Intn(1000)
 
 	return &MySQL{
-		ContainerName:   "mysql-" + name,
-		Port:            port,
-		InitializeTable: initialTable,
+		ContainerName: "mysql-" + name,
+		Port:          port,
 	}, port
 }
 
 // NewMySQLWithPort returns a new instance of MySQL using the specified port.
-func NewMySQLWithPort(name string, initialTable string, port int) *MySQL {
+func NewMySQLWithPort(name string, port int) *MySQL {
 	return &MySQL{
-		ContainerName:   "mysql-" + name,
-		Port:            port,
-		InitializeTable: initialTable,
+		ContainerName: "mysql-" + name,
+		Port:          port,
 	}
 }
 
 // Container spins up the mysql container and runs. When the method exits, the
 // container is stopped and removed.
 func (m *MySQL) Container(f func() error) error {
+	containers[m.ContainerName] = struct{}{}
+
 	CleanupContainer(m.ContainerName) // catch containers that previous cleanup missed
 	defer CleanupContainer(m.ContainerName)
 
@@ -73,40 +68,39 @@ func (m *MySQL) Container(f func() error) error {
 		"-e",
 		"MYSQL_ROOT_PASSWORD=pass",
 		"-d",
-		"mysql:latest",
+		"mysql:5.5",
 	)
-
 	cmdList = append(cmdList, runContainerCmd)
 
+	var sql string
+
 	if m.Path != "" {
-		if !strings.HasSuffix(m.Path, ".sh") &&
-			!strings.HasSuffix(m.Path, ".sql") &&
-			!strings.HasSuffix(m.Path, ".sql.gz") {
-			return errors.New(
-				"file specified by Path should have an extension of .sh, .sql, or .sql.gz or it won't be run during initialization",
-			)
+		b, err := ioutil.ReadFile(path.Join(GoPath(), m.Path))
+		if err != nil {
+			return err
 		}
 
-		cmdList = append(cmdList, exec.Command(
-			"/bin/bash",
-			"-c",
-			fmt.Sprintf(
-				`docker cp %s $(docker ps --filter="name=%s" --format="{{.ID}}"):/docker-entrypoint-initdb.d`,
-				path.Join(GoPath(), m.Path),
-				m.ContainerName,
-			),
-		))
+		sql = string(b)
 	}
 
 	if m.Query != "" {
-		fileName := "injected_query.sql"
+		// the semicolon is in case the sql variable wasn't empty and the
+		// previous sql string didn't end with a semicolon
+		sql += "; " + m.Query
+	}
+
+	if sql != "" {
+		fileName := strconv.Itoa(1+rand.Intn(1000)) + ".sql"
 
 		file, err := os.Create(fileName)
 		if err != nil {
 			return err
 		}
 
-		_, err = io.Copy(file, bytes.NewBufferString(m.Query))
+		// we create the table mysql.z_z_(id integer) after all the other sql has been run
+		// so that we can query the table to see if all the startup sql is finished running,
+		// which means that the container if fully initialized
+		_, err = io.Copy(file, bytes.NewBufferString(sql+";CREATE TABLE mysql.z_z_(id integer);"))
 		if err != nil {
 			return err
 		}
@@ -116,11 +110,9 @@ func (m *MySQL) Container(f func() error) error {
 			return err
 		}
 
-		defer func() {
-			os.Remove(fileName)
-		}()
+		defer os.Remove(fileName)
 
-		cmdList = append(cmdList, exec.Command(
+		addStartupSQLFileCmd := exec.Command(
 			"/bin/bash",
 			"-c",
 			fmt.Sprintf(
@@ -128,20 +120,18 @@ func (m *MySQL) Container(f func() error) error {
 				fileName,
 				m.ContainerName,
 			),
-		))
+		)
+		cmdList = append(cmdList, addStartupSQLFileCmd)
 	}
 
 	waitForInitializeCmd := strCmdForContainer(
 		m.ContainerName,
-		fmt.Sprintf(
-			"until (mysql -uroot -ppass -e 'select 1 from %s limit 1') do echo 'waiting for mysql to be up'; sleep 1; done; sleep 3;",
-			m.InitializeTable,
-		),
+		"until (mysql -uroot -ppass -e 'select \"initialization table found\" from mysql.z_z_ limit 1') do echo 'waiting for mysql to be up'; sleep 1; done; sleep 3;",
 	)
 	cmdList = append(cmdList, waitForInitializeCmd)
 
 	for _, c := range cmdList {
-		err := RunCommandWithTimeout(c)
+		err := RunCommandWithTimeout(c, 1*time.Minute)
 		if err != nil {
 			return err
 		}

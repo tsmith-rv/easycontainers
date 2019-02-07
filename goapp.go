@@ -8,6 +8,7 @@ import (
 	"os/exec"
 
 	"path"
+	"time"
 )
 
 // GoApp is a containerized version of the specified Go application.
@@ -53,6 +54,8 @@ func NewGoAppWithPort(name string, port int, app, binary string) *GoApp {
 // Container spins up the application container and runs. When the method exits, the
 // container is stopped and removed.
 func (g *GoApp) Container(f func() error) error {
+	containers[g.ContainerName] = struct{}{}
+
 	CleanupContainer(g.ContainerName)
 	defer CleanupContainer(g.ContainerName)
 
@@ -83,7 +86,7 @@ func (g *GoApp) Container(f func() error) error {
 			runArgs,
 			"-e",
 			fmt.Sprintf("GOPATH=%s", GoPath()),
-			"golang:latest",
+			"golang:alpine",
 		)
 
 		runContainerCmd = exec.Command(
@@ -116,7 +119,7 @@ func (g *GoApp) Container(f func() error) error {
 	)
 
 	for _, c := range cmdList {
-		err := RunCommandWithTimeout(c)
+		err := RunCommandWithTimeout(c, 1*time.Minute)
 		if err != nil {
 			return err
 		}
@@ -146,7 +149,7 @@ func (g *GoApp) Container(f func() error) error {
 			),
 		)
 
-		err := RunCommandWithTimeout(waitForAppInitialization)
+		err := RunCommandWithTimeout(waitForAppInitialization, 1*time.Minute)
 		if err != nil {
 			return err
 		}
