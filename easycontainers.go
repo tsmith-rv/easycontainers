@@ -65,13 +65,11 @@ func CleanupAllContainers() error {
 }
 
 // CleanupContainer stops the container with the specified name.
-//
-// This will also rm the container because the --rm switch should be set on all containers.
 func CleanupContainer(name string) error {
 	cmd := exec.Command(
-		"docker",
-		"stop",
-		name,
+		"/bin/bash",
+		"-c",
+		fmt.Sprintf(`docker stop $(docker ps --filter="name=^/%s$" --format="{{.ID}}")`, name),
 	)
 
 	var b bytes.Buffer
