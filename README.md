@@ -47,7 +47,7 @@ mysqlContainer, port := easycontainers.NewMySQL("test-container")
 // there is also a NewMySQLWithPort function if you want to use a specific port
 
 // Path to a sql file to run on container startup (path is relative to GOPATH)
-mysqlContainer.Path =  "/src/github.com/RedVentures/easycontainers/test/mysql-test.sql"
+mysqlContainer.Path =  "/src/github.com/tsmith-rv/easycontainers/test/mysql-test.sql"
 
 // runs the container and cleans up the container when the function you pass in exits
 err := mysqlContainer.Container(func() error {
@@ -68,7 +68,7 @@ rabbitContainer, rabbitPort := easycontainers.NewRabbitMQ("test-container-rabbit
 // there is also a NewMySQLWithPort function if you want to use a specific port
 
 // Path to a sql file to run on container startup (path is relative to GOPATH)
-mysqlContainer.Path =  "/src/github.com/RedVentures/easycontainers/test/mysql-test.sql"
+mysqlContainer.Path =  "/src/github.com/tsmith-rv/easycontainers/test/mysql-test.sql"
 
 // Query is just a string of sql to be run on startup as well. 
 mysqlContainer.Query = "CREATE DATABASE somedatabase;"

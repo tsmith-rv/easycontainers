@@ -3,7 +3,7 @@ package test
 import (
 	"testing"
 
-	"github.com/RedVentures/easycontainers"
+	"github.com/tsmith-rv/easycontainers"
 )
 
 func Test_RabbitMQ_Container(t *testing.T) {

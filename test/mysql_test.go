@@ -6,10 +6,10 @@ import (
 
 	"fmt"
 
-	"github.com/RedVentures/easycontainers"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
+	"github.com/tsmith-rv/easycontainers"
 )
 
 type author struct {
@@ -41,7 +41,7 @@ func Test_MySQL_Container(t *testing.T) {
 	// this tests that data is loading properly from Path and Query
 	// - Path is loading the authors
 	// - Query is loading the posts
-	container.Path = "/src/github.com/RedVentures/easycontainers/test/mysql-test.sql"
+	container.Path = "/src/github.com/tsmith-rv/easycontainers/test/mysql-test.sql"
 	container.Query = `
 		CREATE TABLE blog.posts (
 		  id int(11) NOT NULL AUTO_INCREMENT,
