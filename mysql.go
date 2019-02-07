@@ -116,7 +116,7 @@ func (m *MySQL) Container(f func() error) error {
 			"/bin/bash",
 			"-c",
 			fmt.Sprintf(
-				`docker cp %s $(docker ps --filter="name=%s" --format="{{.ID}}"):/docker-entrypoint-initdb.d`,
+				`docker cp %s $(docker ps --filter="name=^/%s$" --format="{{.ID}}"):/docker-entrypoint-initdb.d`,
 				fileName,
 				m.ContainerName,
 			),

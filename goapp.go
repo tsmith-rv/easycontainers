@@ -97,7 +97,7 @@ func (g *GoApp) Container(f func() error) error {
 		"/bin/bash",
 		"-c",
 		fmt.Sprintf(
-			`docker cp %s/. $(docker ps --filter="name=%s" --format="{{.ID}}"):%s`,
+			`docker cp %s/. $(docker ps --filter="name=^/%s$" --format="{{.ID}}"):%s`,
 			g.AppDir,
 			g.ContainerName,
 			g.AppDir,
