@@ -85,6 +85,23 @@ func CleanupContainer(name string) error {
 	return err
 }
 
+// Logs runs the docker logs command on the specified container and returns the output
+func Logs(name string) string {
+	cmd := exec.Command(
+		"docker",
+		"logs",
+		name,
+	)
+
+	var outputBuf bytes.Buffer
+	cmd.Stderr = &outputBuf
+	cmd.Stdout = &outputBuf
+
+	cmd.Run()
+
+	return outputBuf.String()
+}
+
 // RunCommandWithTimeout will execute the specified cmd, but will timeout and
 // return and error after 1 minute.
 func RunCommandWithTimeout(cmd *exec.Cmd, timeout time.Duration) error {

@@ -11,6 +11,8 @@ import (
 	"path"
 	"strconv"
 	"time"
+
+	"github.com/go-errors/errors"
 )
 
 // MySQL is a container using the official mysql docker image.
@@ -131,6 +133,14 @@ func (m *MySQL) Container(f func() error) error {
 	for _, c := range cmdList {
 		err := RunCommandWithTimeout(c, 1*time.Minute)
 		if err != nil {
+			// I'm showing the logs for this container specifically because if there is
+			// a sql error on startup, it won't return from stderr, it will only show
+			// up in the logs
+			logs := Logs(m.ContainerName)
+			if logs != "" {
+				err = errors.New(fmt.Sprintln(err, "", " -- CONTAINER LOGS -- ", "", logs))
+			}
+
 			return err
 		}
 	}
