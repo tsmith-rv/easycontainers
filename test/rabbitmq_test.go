@@ -4,29 +4,28 @@ import (
 	"testing"
 
 	"github.com/RedVentures/easycontainers"
-	"stash.redventures.net/mgpn/callminerimporter/test"
 )
 
 func Test_RabbitMQ_Container(t *testing.T) {
-	rabbitContainer, _ := test.NewRabbitMQ("some-rabbit-container")
+	rabbitContainer, _ := easycontainers.NewRabbitMQ("some-rabbit-container")
 
-	vhost := test.Vhost{
+	vhost := easycontainers.Vhost{
 		Name: "Import",
 	}
 
-	exchange := test.Exchange{
+	exchange := easycontainers.Exchange{
 		Name:  "data_exchange",
 		Type:  easycontainers.ExchangeTypeDirect,
 		Vhost: &vhost,
 	}
 
-	queue := test.Queue{
+	queue := easycontainers.Queue{
 		Name:    "ha.data_exchange.import",
 		Durable: true,
 		Vhost:   &vhost,
 	}
 
-	binding := test.QueueBinding{
+	binding := easycontainers.QueueBinding{
 		Source:      exchange,
 		Destination: queue,
 		RoutingKey:  "data_import",
