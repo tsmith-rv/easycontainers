@@ -68,7 +68,7 @@ func (m *MySQL) Container(f func() error) error {
 		"-e",
 		"MYSQL_ROOT_PASSWORD=pass",
 		"-d",
-		"mysql:5.5",
+		"mysql:latest",
 	)
 	cmdList = append(cmdList, runContainerCmd)
 
