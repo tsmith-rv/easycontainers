@@ -2,6 +2,7 @@ package easycontainers
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -9,10 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
-	"strconv"
 	"time"
-
-	"github.com/go-errors/errors"
 )
 
 // MySQL is a container using the official mysql docker image.
@@ -90,9 +88,14 @@ func (m *MySQL) Container(f func() error) error {
 	}
 
 	if sql != "" {
-		fileName := strconv.Itoa(1+rand.Intn(1000)) + ".sql"
+		file, err := ioutil.TempFile(os.TempDir(), prefix+"*.sql")
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		defer os.Remove(file.Name())
 
-		file, err := os.Create(fileName)
+		err = os.Chmod(file.Name(), 0777)
 		if err != nil {
 			return err
 		}
@@ -105,19 +108,16 @@ func (m *MySQL) Container(f func() error) error {
 			return err
 		}
 
-		err = file.Close()
-		if err != nil {
-			return err
-		}
+		file.Close()
 
-		defer os.Remove(fileName)
+		fmt.Println(file.Name())
 
 		addStartupSQLFileCmd := exec.Command(
 			"/bin/bash",
 			"-c",
 			fmt.Sprintf(
 				`docker cp %s $(docker ps --filter="name=^/%s$" --format="{{.ID}}"):/docker-entrypoint-initdb.d`,
-				fileName,
+				file.Name(),
 				m.ContainerName,
 			),
 		)

@@ -13,16 +13,29 @@ import (
 
 	"go/build"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 )
 
 const prefix = "easycontainers-"
 
 func init() {
+	// we random numbers for port generation
 	rand.Seed(time.Now().Unix())
 
+	// cleanup any oustanding containers with the easycontainers prefix
 	CleanupAllContainers()
 
+	// cleanup any outstanding sql files in temp
+	filepath.Walk(os.TempDir(), func(path string, info os.FileInfo, err error) error {
+		if strings.HasPrefix(info.Name(), prefix) {
+			os.Remove(path)
+		}
+
+		return nil
+	})
+
+	// try to cleanup containers if signaled to quit
 	signalCh := make(chan os.Signal, 1024)
 	signal.Notify(signalCh, syscall.SIGHUP, syscall.SIGUSR2, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGKILL)
 

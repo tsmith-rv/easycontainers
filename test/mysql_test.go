@@ -34,8 +34,7 @@ func Test_MySQL_Container(t *testing.T) {
 	container, port := easycontainers.NewMySQL("test-container")
 
 	if !assert.True(t, port >= 5000 && port <= 6000) {
-		t.Error(errors.New("port should be within range 5000-6000"))
-		return
+		t.Fatal(errors.New("port should be within range 5000-6000"))
 	}
 
 	// this tests that data is loading properly from Path and Query
@@ -70,8 +69,7 @@ func Test_MySQL_Container(t *testing.T) {
 			),
 		)
 		if err != nil {
-			t.Error(err)
-			return nil
+			t.Fatal(err)
 		}
 
 		expectedAuthors := []author{
@@ -147,15 +145,13 @@ func Test_MySQL_Container(t *testing.T) {
 		actualAuthors := make([]author, 0)
 		err = db.Select(&actualAuthors, "SELECT * FROM blog.authors")
 		if err != nil {
-			t.Error(err)
-			return nil
+			t.Fatal(err)
 		}
 
 		actualPosts := make([]post, 0)
 		err = db.Select(&actualPosts, "SELECT * FROM blog.posts")
 		if err != nil {
-			t.Error(err)
-			return nil
+			t.Fatal(err)
 		}
 
 		if !assert.Equal(t, expectedAuthors, actualAuthors) {
@@ -169,7 +165,6 @@ func Test_MySQL_Container(t *testing.T) {
 		return nil
 	})
 	if err != nil {
-		t.Error(err)
-		return
+		t.Fatal(err)
 	}
 }
