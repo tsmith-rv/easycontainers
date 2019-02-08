@@ -48,9 +48,9 @@ func GoPath() string {
 // CleanupAllContainers will stop all containers starting with prefix
 func CleanupAllContainers() error {
 	cmd := exec.Command(
-		"docker",
-		"stop",
-		prefix,
+		"/bin/bash",
+		"-c",
+		fmt.Sprintf(`docker stop $(docker ps --filter="name=%s" --format="{{.ID}}")`, prefix),
 	)
 
 	var b bytes.Buffer
