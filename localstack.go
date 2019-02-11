@@ -181,6 +181,46 @@ func (l *Lambda) SendPayload(container string, payload map[string]interface{}) e
 	return RunCommandWithTimeout(sendMsgCmd, 1*time.Minute)
 }
 
+// CreateCommand returns a command for creating the lambda from the command line.
+func (l *Lambda) CreateCommand() *exec.Cmd {
+	return exec.Command(
+		"/root/.local/bin/aws",
+		"--endpoint-url",
+		"http://localhost:4574",
+		"lambda",
+		"create-function",
+		"--region",
+		"us-east-1",
+		"--function-name",
+		l.FunctionName,
+		"--handler",
+		l.Handler,
+		"--memory",
+		"128",
+		"--role",
+		"r1",
+		"--runtime",
+		"go1.x",
+		"--zip-file",
+		"fileb:///"+path.Base(l.Zip),
+	)
+}
+
+// CreateCommand returns a command for creating the queue from the command line.
+func (q *SQSQueue) CreateCommand() *exec.Cmd {
+	return exec.Command(
+		"/root/.local/bin/aws",
+		"--endpoint-url",
+		"http://localhost:4576",
+		"sqs",
+		"create-queue",
+		"--queue-name",
+		q.Name,
+		"--region",
+		"us-east-1",
+	)
+}
+
 // SendMessage sends the specified message to the queue in the container
 func (l *SQSQueue) SendMessage(container string, msg string) error {
 	sendMsgCmd := cmdForContainer(
@@ -225,7 +265,7 @@ func (l *Localstack) AddLambda(functionName, handler, zip string, payloads ...st
 
 // Container spins up the localstack container and runs. When the method exits, the
 // container is stopped and removed.
-func (l *Localstack) Container(f func(queues []SQSQueue, lambdas []Lambda) error) error {
+func (l *Localstack) Container(f func() error) error {
 	CleanupContainer(l.ContainerName) // catch containers that previous cleanup missed
 	defer CleanupContainer(l.ContainerName)
 
@@ -331,17 +371,7 @@ func (l *Localstack) Container(f func(queues []SQSQueue, lambdas []Lambda) error
 	for _, queue := range l.SQS {
 		createQueueCmd := cmdForContainer(
 			l.ContainerName,
-			exec.Command(
-				"/root/.local/bin/aws",
-				"--endpoint-url",
-				"http://localhost:4576",
-				"sqs",
-				"create-queue",
-				"--queue-name",
-				queue.Name,
-				"--region",
-				"us-east-1",
-			),
+			queue.CreateCommand(),
 		)
 
 		err = RunCommandWithTimeout(createQueueCmd, 5*time.Second)
@@ -367,27 +397,7 @@ func (l *Localstack) Container(f func(queues []SQSQueue, lambdas []Lambda) error
 
 		createLambdaCommand := cmdForContainer(
 			l.ContainerName,
-			exec.Command(
-				"/root/.local/bin/aws",
-				"--endpoint-url",
-				"http://localhost:4574",
-				"lambda",
-				"create-function",
-				"--region",
-				"us-east-1",
-				"--function-name",
-				lambda.FunctionName,
-				"--handler",
-				lambda.Handler,
-				"--memory",
-				"128",
-				"--role",
-				"r1",
-				"--runtime",
-				"go1.x",
-				"--zip-file",
-				"fileb:///"+path.Base(lambda.Zip),
-			),
+			lambda.CreateCommand(),
 		)
 		err = RunCommandWithTimeout(createLambdaCommand, 10*time.Second)
 		if err != nil {
@@ -397,5 +407,5 @@ func (l *Localstack) Container(f func(queues []SQSQueue, lambdas []Lambda) error
 
 	fmt.Println("successfully created localstack container")
 
-	return f(l.SQS, l.Lambdas)
+	return f()
 }

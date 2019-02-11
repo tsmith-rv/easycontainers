@@ -35,7 +35,7 @@ func Test_Localstack_Container(t *testing.T) {
 		easycontainers.ServiceSSM,
 		easycontainers.ServiceSecretsManager,
 	)
-	err := localstackContainer.Container(func(queues []easycontainers.SQSQueue, lambdas []easycontainers.Lambda) error {
+	err := localstackContainer.Container(func() error {
 		return nil
 	})
 	if !assert.NoError(t, err) {
@@ -82,7 +82,7 @@ func Test_Localstack_SQS_SendMessage(t *testing.T) {
 		AddSQSQueue("queue2").
 		AddSQSQueue("queue3")
 
-	err := localstackContainer.Container(func(queues []easycontainers.SQSQueue, lambdas []easycontainers.Lambda) error {
+	err := localstackContainer.Container(func() error {
 		var wg sync.WaitGroup
 		wg.Add(75)
 
@@ -90,7 +90,7 @@ func Test_Localstack_SQS_SendMessage(t *testing.T) {
 			go func() {
 				defer wg.Done()
 
-				err := queues[0].SendMessage(localstackContainer.ContainerName, strconv.Itoa(i))
+				err := localstackContainer.SQS[0].SendMessage(localstackContainer.ContainerName, strconv.Itoa(i))
 				if !assert.NoError(t, err) {
 					return
 				}
@@ -101,7 +101,7 @@ func Test_Localstack_SQS_SendMessage(t *testing.T) {
 			go func() {
 				defer wg.Done()
 
-				err := queues[1].SendMessage(localstackContainer.ContainerName, strconv.Itoa(i))
+				err := localstackContainer.SQS[1].SendMessage(localstackContainer.ContainerName, strconv.Itoa(i))
 				if !assert.NoError(t, err) {
 					return
 				}
@@ -112,7 +112,7 @@ func Test_Localstack_SQS_SendMessage(t *testing.T) {
 			go func() {
 				defer wg.Done()
 
-				err := queues[2].SendMessage(localstackContainer.ContainerName, strconv.Itoa(i))
+				err := localstackContainer.SQS[2].SendMessage(localstackContainer.ContainerName, strconv.Itoa(i))
 				if !assert.NoError(t, err) {
 					return
 				}
@@ -169,7 +169,7 @@ func Test_Localstack_Lambda_SendPayload(t *testing.T) {
 		AddLambda("function2", "woot", "src/github.com/tsmith-rv/easycontainers/test/handler.zip").
 		AddLambda("function3", "woot", "src/github.com/tsmith-rv/easycontainers/test/handler.zip")
 
-	err := localstackContainer.Container(func(queues []easycontainers.SQSQueue, lambdas []easycontainers.Lambda) error {
+	err := localstackContainer.Container(func() error {
 		var wg sync.WaitGroup
 		wg.Add(9)
 
@@ -177,7 +177,7 @@ func Test_Localstack_Lambda_SendPayload(t *testing.T) {
 			go func() {
 				defer wg.Done()
 
-				err := lambdas[0].SendPayload(localstackContainer.ContainerName, map[string]interface{}{
+				err := localstackContainer.Lambdas[0].SendPayload(localstackContainer.ContainerName, map[string]interface{}{
 					"What is your name?": "tsmith-rv",
 					"How old are you?":   i,
 				})
@@ -191,7 +191,7 @@ func Test_Localstack_Lambda_SendPayload(t *testing.T) {
 			go func() {
 				defer wg.Done()
 
-				err := lambdas[1].SendPayload(localstackContainer.ContainerName, map[string]interface{}{
+				err := localstackContainer.Lambdas[1].SendPayload(localstackContainer.ContainerName, map[string]interface{}{
 					"What is your name?": "tsmith-rv",
 					"How old are you?":   i,
 				})
@@ -205,7 +205,7 @@ func Test_Localstack_Lambda_SendPayload(t *testing.T) {
 			go func() {
 				defer wg.Done()
 
-				err := lambdas[2].SendPayload(localstackContainer.ContainerName, map[string]interface{}{
+				err := localstackContainer.Lambdas[2].SendPayload(localstackContainer.ContainerName, map[string]interface{}{
 					"What is your name?": "tsmith-rv",
 					"How old are you?":   i,
 				})
@@ -265,8 +265,8 @@ func Test_Localstack_Lambda_SendPayload_BadPayload(t *testing.T) {
 		AddLambda("function2", "woot", "src/github.com/tsmith-rv/easycontainers/test/handler.zip").
 		AddLambda("function3", "woot", "src/github.com/tsmith-rv/easycontainers/test/handler.zip")
 
-	err := localstackContainer.Container(func(queues []easycontainers.SQSQueue, lambdas []easycontainers.Lambda) error {
-		for _, lambda := range lambdas {
+	err := localstackContainer.Container(func() error {
+		for _, lambda := range localstackContainer.Lambdas {
 			err := lambda.SendPayload(localstackContainer.ContainerName, map[string]interface{}{
 				"What is your name?": 3, // value should be a string, not an int
 				"How old are you?":   33,
