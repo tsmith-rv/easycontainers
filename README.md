@@ -43,12 +43,12 @@ Using a MySQL container
 
 ```go
 mysqlContainer, port := easycontainers.NewMySQL("test-container")
-
+ 
 // there is also a NewMySQLWithPort function if you want to use a specific port
-
+ 
 // Path to a sql file to run on container startup (path is relative to GOPATH)
 mysqlContainer.Path =  "/src/github.com/tsmith-rv/easycontainers/test/mysql-test.sql"
-
+ 
 // runs the container and cleans up the container when the function you pass in exits
 err := mysqlContainer.Container(func() error {
 	// logic that needs access to the mysql container
@@ -64,15 +64,15 @@ Using RabbitMQ and MySQL
 ```go
 mysqlContainer, mysqlPort := easycontainers.NewMySQL("test-container-mysql")
 rabbitContainer, rabbitPort := easycontainers.NewRabbitMQ("test-container-rabbit")
-
+ 
 // there is also a NewMySQLWithPort function if you want to use a specific port
-
+ 
 // Path to a sql file to run on container startup (path is relative to GOPATH)
 mysqlContainer.Path =  "/src/github.com/tsmith-rv/easycontainers/test/mysql-test.sql"
-
+ 
 // Query is just a string of sql to be run on startup as well. 
 mysqlContainer.Query = "CREATE DATABASE somedatabase;"
-
+ 
 // rabbitMQ setup
 vhost := test.Vhost{  
    Name: "Import",  
@@ -103,7 +103,7 @@ rabbitContainer.
    AddExchanges(exchange).  
    AddQueue(queue).  
    AddBinding(binding)
-
+ 
 // runs the containers and cleans them up when the function you pass in exits
 err := rabbitContainer.Container(func() error {
 	return mysqlContainer.Container(func() error {
@@ -115,6 +115,42 @@ err := rabbitContainer.Container(func() error {
 		// can be accessed at localhost:port using the rabbitPort 
 		// variable from above
 	})
+})
+if err != nil {
+	panic(err)
+}
+```
+
+Using Localstack with Lambda functions and SQS Queues:
+```go
+// choose which services to spin up
+localstackContainer, ports := easycontainers.NewLocalstack(
+    "Test_Localstack_SQS_SendMessage",
+    easycontainers.ServiceSQS,
+    easycontainers.ServiceLambda,
+)
+ 
+localstackContainer.
+    AddSQSQueue("queue1").
+    AddSQSQueue("queue2").
+    AddSQSQueue("queue3")
+    
+// woot is the handler name and src/github.com/tsmith-rv/easycontainers/test/handler.zip is the
+// path to the zip folder relative to the GOPATH
+localstackContainer.
+    AddLambda("function1", "woot", "src/github.com/tsmith-rv/easycontainers/test/handler.zip").
+ 
+err := localstackContainer.Container(func() error {
+    // send a message to the first SQS queue
+    localstackContainer.SQS[0].SendMessage(localstackContainer.ContainerName, "some message")
+ 
+    // send a payload to the first lambda function
+    localstackContainer.Lambdas[0].SendPayload(localstackContainer.ContainerName, map[string]interface{}{
+        "What is your name?": "tsmith-rv",
+        "How old are you?":   108,
+    })
+    
+    return nil
 })
 if err != nil {
 	panic(err)
