@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"math/rand"
 	"os"
 	"os/exec"
 	"path"
@@ -31,7 +30,10 @@ type MySQL struct {
 //
 // Conflicts are possible because it doesn't check if the port is already allocated.
 func NewMySQL(name string) (r *MySQL, port int) {
-	port = 5000 + rand.Intn(1000)
+	port, err := getFreePort()
+	if err != nil {
+		panic(err)
+	}
 
 	return &MySQL{
 		ContainerName: prefix + "mysql-" + name,
@@ -109,8 +111,6 @@ func (m *MySQL) Container(f func() error) error {
 		}
 
 		file.Close()
-
-		fmt.Println(file.Name())
 
 		addStartupSQLFileCmd := exec.Command(
 			"/bin/bash",

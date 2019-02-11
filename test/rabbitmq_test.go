@@ -3,11 +3,12 @@ package test
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/tsmith-rv/easycontainers"
 )
 
 func Test_RabbitMQ_Container(t *testing.T) {
-	rabbitContainer, _ := easycontainers.NewRabbitMQ("some-rabbit-container")
+	rabbitContainer, port := easycontainers.NewRabbitMQ("Test_RabbitMQ_Container")
 
 	vhost := easycontainers.Vhost{
 		Name: "Import",
@@ -43,6 +44,15 @@ func Test_RabbitMQ_Container(t *testing.T) {
 	})
 	if err != nil {
 		t.Error(err)
+		return
+	}
+
+	isFree, err := isPortFree(port)
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	if !assert.True(t, isFree, "port %d should now be available, but isn't", port) {
 		return
 	}
 }

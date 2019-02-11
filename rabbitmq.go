@@ -2,7 +2,6 @@ package easycontainers
 
 import (
 	"fmt"
-	"math/rand"
 	"os/exec"
 	"time"
 )
@@ -57,7 +56,10 @@ type QueueBinding struct {
 //
 // Conflicts are possible because it doesn't check if the port is already allocated.
 func NewRabbitMQ(name string) (r *RabbitMQ, port int) {
-	port = 5000 + rand.Intn(1000)
+	port, err := getFreePort()
+	if err != nil {
+		panic(err)
+	}
 
 	return &RabbitMQ{
 		ContainerName: prefix + "rabbit-" + name,

@@ -1,7 +1,6 @@
 package test
 
 import (
-	"errors"
 	"testing"
 
 	"fmt"
@@ -31,11 +30,7 @@ type post struct {
 }
 
 func Test_MySQL_Container(t *testing.T) {
-	container, port := easycontainers.NewMySQL("test-container")
-
-	if !assert.True(t, port >= 5000 && port <= 6000) {
-		t.Fatal(errors.New("port should be within range 5000-6000"))
-	}
+	container, port := easycontainers.NewMySQL("Test_MySQL_Container")
 
 	// this tests that data is loading properly from Path and Query
 	// - Path is loading the authors
@@ -166,5 +161,14 @@ func Test_MySQL_Container(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	isFree, err := isPortFree(port)
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	if !assert.True(t, isFree, "port %d should now be available, but isn't", port) {
+		return
 	}
 }

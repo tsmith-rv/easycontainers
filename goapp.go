@@ -3,7 +3,6 @@ package easycontainers
 import (
 	"bytes"
 	"fmt"
-	"math/rand"
 	"os"
 	"os/exec"
 
@@ -31,7 +30,10 @@ type GoApp struct {
 //
 // Conflicts are possible because it doesn't check if the port is already allocated.
 func NewGoApp(name, appDir, buildDir string) (r *GoApp, port int) {
-	port = 5000 + rand.Intn(1000)
+	port, err := getFreePort()
+	if err != nil {
+		panic(err)
+	}
 
 	return &GoApp{
 		ContainerName: prefix + path.Base(buildDir) + "-goapp-" + name,
