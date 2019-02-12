@@ -20,8 +20,13 @@ The aim is to make it as simple and quick as possible to spin up these commonly 
 - Cleaning up or removing old containers or images
 
 ### Is there something that already does this?
-The testcontainers package (https://github.com/testcontainers/testcontainers-go) does something similar, so if that is more your game, have at it, but I
-personally like the way I've done it here. Whatever works best for you.
+There are a couple of packages that do something similar:
+
+- testcontainers (https://github.com/testcontainers/testcontainers-go)
+- dockertest (https://github.com/ory/dockertest)
+
+If those are more your game, have at it! I haven't used testcontainers, but dockertest is awesome, it just doesn't abstract away the docker details as much
+as I would like, hence building this.
 
 ### Prerequisites
 Install *docker*. https://docs.docker.com/install/
