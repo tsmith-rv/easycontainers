@@ -28,14 +28,16 @@ There are a couple of packages that do something similar:
 If those are more your game, have at it! I haven't used testcontainers, but dockertest is awesome, it just doesn't abstract away the docker details as much
 as I would like, hence building this.
 
+### Who isn't this for?
+Anyone who needs control over the docker details and commands or needs a ton of granular control over how each service
+is spun up in the container. The best use case for this is needing a very out-of-the-box configuration for these
+services. As time goes on, I would love to add more granular options on all of these, but at the moment, that isn't the
+case. 
+
+The goal is to keep the docker stuff abstracted out, and to maintain simplicity in how these services are created.
+
 ### Prerequisites
 Install *docker*. https://docs.docker.com/install/
-
-### Contribute
-Open a PR! Add support for some dependency you use - common or not, or help broaden the support for the existing
-services. I have no guidelines really (which is probably bad, but whatever). I would love to get some more people
-on this. It has been really helpful to a couple of things I've been working on the past few days and I can already
-see myself using it a lot going forward.
 
 ### Examples
 
@@ -142,10 +144,10 @@ localstackContainer.
  
 err := localstackContainer.Container(func() error {
     // send a message to the first SQS queue
-    localstackContainer.SQS[0].SendMessage(localstackContainer.ContainerName, "some message")
+    localstackContainer.Queues[0].SendMessage(localstackContainer.ContainerName, "some message")
  
     // send a payload to the first lambda function
-    localstackContainer.Lambdas[0].SendPayload(localstackContainer.ContainerName, map[string]interface{}{
+    localstackContainer.Functions[0].SendPayload(localstackContainer.ContainerName, map[string]interface{}{
         "What is your name?": "tsmith-rv",
         "How old are you?":   108,
     })
@@ -156,3 +158,23 @@ if err != nil {
 	panic(err)
 }
 ```
+
+### Gotchas
+- Despite going out of my way to make sure bound ports aren't given out, when running parallel tests I occasionally still
+get an error from one or more docker containers claiming I'm using a port that is already allocated, despite checking if
+ports are free before allocating them and also avoiding allocating the same port twice. So, a mystery for now?
+- I've tried to use the smallest images possible, while still trying to use the latest versions of these services as possible,
+which is a complicated balance.
+- **testing** is lacking right now. There are some very basic tests that essentially make sure the container spins up and frees 
+up the port when it is done.
+
+### Things I want to add
+- The ability to choose the image *tag*. While I don't want to add *docker* details into the usage, I know that being able to choose 
+the version of the service you're using is essential, and image tags are the best way to implement that.
+- Better tests
+
+### Contribute
+Open a PR! Add support for some dependency you use - common or not, or help broaden the support for the existing
+services. I have no guidelines really (which is probably bad, but whatever). I would love to get some more people
+on this. It has been really helpful to a couple of things I've been working on the past few days and I can already
+see myself using it a lot going forward.

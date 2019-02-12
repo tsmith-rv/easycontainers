@@ -25,10 +25,7 @@ type Postgres struct {
 	Query         string
 }
 
-// NewPostgres returns a new instance of Postgres and the port it will be using, which is
-// a randomly selected number between 5000-6000.
-//
-// Conflicts are possible because it doesn't check if the port is already allocated.
+// NewPostgres returns a new instance of Postgres and the port it will be using.
 func NewPostgres(name string) (r *Postgres, port int) {
 	port, err := getFreePort()
 	if err != nil {

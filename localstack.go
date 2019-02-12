@@ -3,7 +3,6 @@ package easycontainers
 import (
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"os/exec"
 	"path"
 	"strings"
@@ -73,12 +72,13 @@ var initializations = map[string]string{
 	ServiceSecretsManager:  "secretsmanager get-random-password",
 }
 
+// SQSQueue is a queue in SQS in Localstack (who knew?)
 type SQSQueue struct {
 	Name string
 }
 
-// Lambdas is a lambda function in localstack
-type Lambda struct {
+// LambdaFunction is a lambda function in localstack (who knew?)
+type LambdaFunction struct {
 	FunctionName string
 	Handler      string
 	Zip          string
@@ -87,7 +87,7 @@ type Lambda struct {
 
 // Localstack is the container for localstack/localstack.
 //
-// SQS is a collection of queues and their messages to be created when the container initializes.
+// Queues is a collection of queues and their messages to be created when the container initializes.
 //
 // Services is a list of services to start when the container starts up. You have to explicitly choose
 // which to start because it is really hard on your system to start them all if you aren't using them.
@@ -95,19 +95,14 @@ type Lambda struct {
 // Environment is a map of environment variables to create in the container.
 type Localstack struct {
 	ContainerName string
-	SQS           []SQSQueue
-	Lambdas       []Lambda
+	Queues        []SQSQueue
+	Functions     []LambdaFunction
 	Services      []string
 	PortBindings  map[string]string
 	Environment   map[string]string
 }
 
-// NewLocalstack returns a new instance of Localstack and the port it will be using, which is
-// a randomly selected number between 5000-6000.
-//
-// services is a list of services to start up when the container starts up.
-//
-// Conflicts are possible because it doesn't check if the port is already allocated.
+// NewLocalstack returns a new instance of Localstack and the port it will be using.
 func NewLocalstack(name string, services ...string) (r *Localstack, portMap map[string]int) {
 	portMap = make(map[string]int)
 	portBindings := make(map[string]string)
@@ -134,10 +129,7 @@ func NewLocalstackWithPortMap(name string, portMap map[string]int, services ...s
 	portBindings := make(map[string]string)
 
 	for _, s := range services {
-		port := 5000 + rand.Intn(1000)
-
-		portMap[s] = port
-		portBindings[s] = fmt.Sprintf("%d:%d", port, ports[s])
+		portBindings[s] = fmt.Sprintf("%d:%d", portMap[s], ports[s])
 	}
 
 	return &Localstack{
@@ -152,7 +144,7 @@ func NewLocalstackWithPortMap(name string, portMap map[string]int, services ...s
 // The json is used as a token in the command line, and doesn't work right with
 // single quotes and stuff (for now), so please, don't use single quotes or special
 // bash characters, OR YOU'RE GONNA HAVE A BAD TIME.
-func (l *Lambda) SendPayload(container string, payload map[string]interface{}) error {
+func (l *LambdaFunction) SendPayload(container string, payload map[string]interface{}) error {
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return err
@@ -182,7 +174,7 @@ func (l *Lambda) SendPayload(container string, payload map[string]interface{}) e
 }
 
 // CreateCommand returns a command for creating the lambda from the command line.
-func (l *Lambda) CreateCommand() *exec.Cmd {
+func (l *LambdaFunction) CreateCommand() *exec.Cmd {
 	return exec.Command(
 		"/root/.local/bin/aws",
 		"--endpoint-url",
@@ -243,18 +235,18 @@ func (l *SQSQueue) SendMessage(container string, msg string) error {
 	return RunCommandWithTimeout(sendMsgCmd, 1*time.Minute)
 }
 
-// AddSQSQueue adds a queue and it's messages to be created when the container starts up.
-func (l *Localstack) AddSQSQueue(name string) *Localstack {
-	l.SQS = append(l.SQS, SQSQueue{
+// AddQueue adds a queue and it's messages to be created when the container starts up.
+func (l *Localstack) AddQueue(name string) *Localstack {
+	l.Queues = append(l.Queues, SQSQueue{
 		Name: name,
 	})
 
 	return l
 }
 
-// AddLambda adds a Lambdas and it's payloads to be created when the container starts up
-func (l *Localstack) AddLambda(functionName, handler, zip string, payloads ...string) *Localstack {
-	l.Lambdas = append(l.Lambdas, Lambda{
+// AddFunction adds a LambdaFunction and it's payloads to be created when the container starts up
+func (l *Localstack) AddFunction(functionName, handler, zip string) *Localstack {
+	l.Functions = append(l.Functions, LambdaFunction{
 		FunctionName: functionName,
 		Handler:      handler,
 		Zip:          zip,
@@ -279,7 +271,7 @@ func (l *Localstack) Container(f func() error) error {
 			"-d",
 		}
 
-		// if Lambdas is being run, mount the unix socket or Lambdas's won't run
+		// if Functions is being run, mount the unix socket or Functions's won't run
 		for _, s := range l.Services {
 			if s == ServiceLambda {
 				runArgs = append(runArgs, "-v", "/var/run/docker.sock:/var/run/docker.sock")
@@ -368,7 +360,7 @@ func (l *Localstack) Container(f func() error) error {
 	default:
 	}
 
-	for _, queue := range l.SQS {
+	for _, queue := range l.Queues {
 		createQueueCmd := cmdForContainer(
 			l.ContainerName,
 			queue.CreateCommand(),
@@ -380,7 +372,7 @@ func (l *Localstack) Container(f func() error) error {
 		}
 	}
 
-	for _, lambda := range l.Lambdas {
+	for _, lambda := range l.Functions {
 		addStartupSQLFileCmd := exec.Command(
 			"/bin/bash",
 			"-c",
@@ -390,6 +382,7 @@ func (l *Localstack) Container(f func() error) error {
 				l.ContainerName,
 			),
 		)
+
 		err = RunCommandWithTimeout(addStartupSQLFileCmd, 10*time.Second)
 		if err != nil {
 			return err
@@ -399,6 +392,7 @@ func (l *Localstack) Container(f func() error) error {
 			l.ContainerName,
 			lambda.CreateCommand(),
 		)
+
 		err = RunCommandWithTimeout(createLambdaCommand, 10*time.Second)
 		if err != nil {
 			return err

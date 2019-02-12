@@ -25,10 +25,7 @@ type MySQL struct {
 	Query         string
 }
 
-// NewMySQL returns a new instance of MySQL and the port it will be using, which is
-// a randomly selected number between 5000-6000.
-//
-// Conflicts are possible because it doesn't check if the port is already allocated.
+// NewMySQL returns a new instance of MySQL and the port it will be using.
 func NewMySQL(name string) (r *MySQL, port int) {
 	port, err := getFreePort()
 	if err != nil {

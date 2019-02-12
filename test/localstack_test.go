@@ -78,9 +78,9 @@ func Test_Localstack_SQS_SendMessage(t *testing.T) {
 	)
 
 	localstackContainer.
-		AddSQSQueue("queue1").
-		AddSQSQueue("queue2").
-		AddSQSQueue("queue3")
+		AddQueue("queue1").
+		AddQueue("queue2").
+		AddQueue("queue3")
 
 	err := localstackContainer.Container(func() error {
 		var wg sync.WaitGroup
@@ -90,7 +90,7 @@ func Test_Localstack_SQS_SendMessage(t *testing.T) {
 			go func() {
 				defer wg.Done()
 
-				err := localstackContainer.SQS[0].SendMessage(localstackContainer.ContainerName, strconv.Itoa(i))
+				err := localstackContainer.Queues[0].SendMessage(localstackContainer.ContainerName, strconv.Itoa(i))
 				if !assert.NoError(t, err) {
 					return
 				}
@@ -101,7 +101,7 @@ func Test_Localstack_SQS_SendMessage(t *testing.T) {
 			go func() {
 				defer wg.Done()
 
-				err := localstackContainer.SQS[1].SendMessage(localstackContainer.ContainerName, strconv.Itoa(i))
+				err := localstackContainer.Queues[1].SendMessage(localstackContainer.ContainerName, strconv.Itoa(i))
 				if !assert.NoError(t, err) {
 					return
 				}
@@ -112,7 +112,7 @@ func Test_Localstack_SQS_SendMessage(t *testing.T) {
 			go func() {
 				defer wg.Done()
 
-				err := localstackContainer.SQS[2].SendMessage(localstackContainer.ContainerName, strconv.Itoa(i))
+				err := localstackContainer.Queues[2].SendMessage(localstackContainer.ContainerName, strconv.Itoa(i))
 				if !assert.NoError(t, err) {
 					return
 				}
@@ -165,9 +165,9 @@ func Test_Localstack_Lambda_SendPayload(t *testing.T) {
 	)
 
 	localstackContainer.
-		AddLambda("function1", "woot", "src/github.com/tsmith-rv/easycontainers/test/handler.zip").
-		AddLambda("function2", "woot", "src/github.com/tsmith-rv/easycontainers/test/handler.zip").
-		AddLambda("function3", "woot", "src/github.com/tsmith-rv/easycontainers/test/handler.zip")
+		AddFunction("function1", "woot", "src/github.com/tsmith-rv/easycontainers/test/handler.zip").
+		AddFunction("function2", "woot", "src/github.com/tsmith-rv/easycontainers/test/handler.zip").
+		AddFunction("function3", "woot", "src/github.com/tsmith-rv/easycontainers/test/handler.zip")
 
 	err := localstackContainer.Container(func() error {
 		var wg sync.WaitGroup
@@ -177,7 +177,7 @@ func Test_Localstack_Lambda_SendPayload(t *testing.T) {
 			go func() {
 				defer wg.Done()
 
-				err := localstackContainer.Lambdas[0].SendPayload(localstackContainer.ContainerName, map[string]interface{}{
+				err := localstackContainer.Functions[0].SendPayload(localstackContainer.ContainerName, map[string]interface{}{
 					"What is your name?": "tsmith-rv",
 					"How old are you?":   i,
 				})
@@ -191,7 +191,7 @@ func Test_Localstack_Lambda_SendPayload(t *testing.T) {
 			go func() {
 				defer wg.Done()
 
-				err := localstackContainer.Lambdas[1].SendPayload(localstackContainer.ContainerName, map[string]interface{}{
+				err := localstackContainer.Functions[1].SendPayload(localstackContainer.ContainerName, map[string]interface{}{
 					"What is your name?": "tsmith-rv",
 					"How old are you?":   i,
 				})
@@ -205,7 +205,7 @@ func Test_Localstack_Lambda_SendPayload(t *testing.T) {
 			go func() {
 				defer wg.Done()
 
-				err := localstackContainer.Lambdas[2].SendPayload(localstackContainer.ContainerName, map[string]interface{}{
+				err := localstackContainer.Functions[2].SendPayload(localstackContainer.ContainerName, map[string]interface{}{
 					"What is your name?": "tsmith-rv",
 					"How old are you?":   i,
 				})
@@ -261,12 +261,12 @@ func Test_Localstack_Lambda_SendPayload_BadPayload(t *testing.T) {
 	)
 
 	localstackContainer.
-		AddLambda("function1", "woot", "src/github.com/tsmith-rv/easycontainers/test/handler.zip").
-		AddLambda("function2", "woot", "src/github.com/tsmith-rv/easycontainers/test/handler.zip").
-		AddLambda("function3", "woot", "src/github.com/tsmith-rv/easycontainers/test/handler.zip")
+		AddFunction("function1", "woot", "src/github.com/tsmith-rv/easycontainers/test/handler.zip").
+		AddFunction("function2", "woot", "src/github.com/tsmith-rv/easycontainers/test/handler.zip").
+		AddFunction("function3", "woot", "src/github.com/tsmith-rv/easycontainers/test/handler.zip")
 
 	err := localstackContainer.Container(func() error {
-		for _, lambda := range localstackContainer.Lambdas {
+		for _, lambda := range localstackContainer.Functions {
 			err := lambda.SendPayload(localstackContainer.ContainerName, map[string]interface{}{
 				"What is your name?": 3, // value should be a string, not an int
 				"How old are you?":   33,

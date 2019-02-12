@@ -51,10 +51,7 @@ type QueueBinding struct {
 	Vhost       *Vhost
 }
 
-// NewRabbitMQ returns a new instance of RabbitMQ and the port it will be using, which is
-// a randomly selected number between 5000-6000.
-//
-// Conflicts are possible because it doesn't check if the port is already allocated.
+// NewRabbitMQ returns a new instance of RabbitMQ and the port it will be using.
 func NewRabbitMQ(name string) (r *RabbitMQ, port int) {
 	port, err := getFreePort()
 	if err != nil {
