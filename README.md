@@ -9,6 +9,7 @@ I wrote this package. It basically hides the necessary docker commands for spinn
 
 - MySQL
 - RabbitMQ
+- Postgres
 - Localstack
 - Containerized Go Apps
 
