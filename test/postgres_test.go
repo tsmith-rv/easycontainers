@@ -5,29 +5,29 @@ import (
 
 	"fmt"
 
-	_ "github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
+	_ "github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 	"github.com/tsmith-rv/easycontainers"
 )
 
-func Test_MySQL_Container(t *testing.T) {
-	container, port := easycontainers.NewMySQL("Test_MySQL_Container")
+func Test_Postgres_Container(t *testing.T) {
+	container, port := easycontainers.NewPostgres("Test_Postgres_Container")
 
 	// this tests that data is loading properly from Path and Query
 	// - Path is loading the authors
 	// - Query is loading the posts
-	container.Path = "/src/github.com/tsmith-rv/easycontainers/test/mysql-test.sql"
+	container.Path = "/src/github.com/tsmith-rv/easycontainers/test/postgres-test.sql"
 	container.Query = `
 		CREATE TABLE blog.posts (
-		  id int(11) NOT NULL AUTO_INCREMENT,
-		  author_id int(11) NOT NULL,
-		  title varchar(255) COLLATE utf8_unicode_ci NOT NULL,
-		  description varchar(500) COLLATE utf8_unicode_ci NOT NULL,
-		  content text COLLATE utf8_unicode_ci NOT NULL,
-		  date varchar(50) COLLATE utf8_unicode_ci NOT NULL,
+		  id SERIAL,
+		  author_id INTEGER NOT NULL,
+		  title varchar(255) NOT NULL,
+		  description varchar(500) NOT NULL,
+		  content text NOT NULL,
+		  date varchar(50) NOT NULL,
 		  PRIMARY KEY (id)
-		) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
+		);
 		
 		INSERT INTO blog.posts (id, author_id, title, description, content, date) VALUES (1, 1, 'Cupiditate ducimus magni error aspernatur quam eaque officia recusandae.', 'Eligendi quo harum in laboriosam voluptatum ut nemo ex. Et sapiente magni praesentium libero. Et sunt et veritatis unde quos perspiciatis amet ut.', 'Asperiores rerum harum laborum at qui quae quia. Iusto aliquam sapiente nesciunt laboriosam expedita. Eos qui delectus dolorum eligendi ipsam ad.', '1975-07-21');
 		INSERT INTO blog.posts (id, author_id, title, description, content, date) VALUES (2, 2, 'Dignissimos eius voluptatem aliquid ab nostrum facere saepe voluptatem.', 'Dolorem aut et inventore rem. Ut eius eveniet qui. Error velit ea corrupti voluptas laboriosam aliquam. Blanditiis aliquam voluptas consequatur quas voluptatem.', 'Delectus qui non nesciunt ut sit omnis a. Mollitia iste ullam illum ipsam. At et voluptatibus dolores repudiandae officiis.', '1996-01-10');
@@ -36,9 +36,9 @@ func Test_MySQL_Container(t *testing.T) {
 
 	err := container.Container(func() error {
 		db, err := sqlx.Connect(
-			"mysql",
+			"postgres",
 			fmt.Sprintf(
-				"root:pass@tcp(localhost:%d)/?parseTime=true",
+				"user=postgres password=pass host=localhost port=%d sslmode=disable",
 				port,
 			),
 		)

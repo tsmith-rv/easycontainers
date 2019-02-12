@@ -5,6 +5,25 @@ import (
 	"strconv"
 )
 
+// structs for testing sql db containers
+type author struct {
+	ID        int    `db:"id"`
+	FirstName string `db:"first_name"`
+	LastName  string `db:"last_name"`
+	Email     string `db:"email"`
+	Birthdate string `db:"birthdate"`
+	Added     string `db:"added"`
+}
+
+type post struct {
+	ID          int    `db:"id"`
+	AuthorID    int    `db:"author_id"`
+	Title       string `db:"title"`
+	Description string `db:"description"`
+	Content     string `db:"content"`
+	Date        string `db:"date"`
+}
+
 func isPortFree(port int) (isFree bool, err error) {
 	// Concatenate a colon and the port
 	host := ":" + strconv.Itoa(port)
