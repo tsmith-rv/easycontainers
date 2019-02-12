@@ -26,12 +26,6 @@ personally like the way I've done it here. Whatever works best for you.
 ### Prerequisites
 Install *docker*. https://docs.docker.com/install/
 
-### The Hitch
-I wrote this specifically for stuff I've been testing since the Thursday before writing this, which means it isn't as thorough as it should be.
-For example, I don't have helper methods for all the AWS services in Localstack, just for SQS, because that is
-what I've been testing an application against. However, I would like to add to this until it covers a lot of
-basic use cases for different dependencies. Which leads me to my next point...
-
 ### Contribute
 Open a PR! Add support for some dependency you use - common or not, or help broaden the support for the existing
 services. I have no guidelines really (which is probably bad, but whatever). I would love to get some more people
