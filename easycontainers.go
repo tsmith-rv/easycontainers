@@ -2,6 +2,7 @@ package easycontainers
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"math/rand"
 	"os/exec"
@@ -13,10 +14,11 @@ import (
 
 	"go/build"
 	"net"
-	"os/signal"
 	"path/filepath"
 	"sync"
-	"syscall"
+
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/client"
 )
 
 const prefix = "easycontainers-"
@@ -33,8 +35,6 @@ func init() {
 	// cleanup any oustanding containers with the easycontainers prefix
 	CleanupAllContainers()
 
-	WaitForCleanup()
-
 	// cleanup any outstanding sql files in temp
 	filepath.Walk(os.TempDir(), func(path string, info os.FileInfo, err error) error {
 		if strings.HasPrefix(info.Name(), prefix) {
@@ -43,16 +43,6 @@ func init() {
 
 		return nil
 	})
-
-	// try to cleanup containers if signaled to quit
-	signalCh := make(chan os.Signal, 1024)
-	signal.Notify(signalCh, syscall.SIGINT, syscall.SIGKILL)
-
-	go func() {
-		<-signalCh
-
-		CleanupAllContainers()
-	}()
 }
 
 // GoPath returns the value stored in the GOPATH environment variable.
@@ -69,18 +59,31 @@ func GoPath() string {
 
 // CleanupAllContainers will stop all containers starting with prefix
 func CleanupAllContainers() error {
-	cmd := exec.Command(
-		"/bin/bash",
-		"-c",
-		fmt.Sprintf(`docker stop $(docker ps --filter="name=%s" --format="{{.ID}}")`, prefix),
-	)
-
-	var b bytes.Buffer
-	cmd.Stderr = &b
-
-	err := cmd.Run()
+	ctx := context.Background()
+	cli, err := client.NewEnvClient()
 	if err != nil {
-		return fmt.Errorf("error in command : %s -- %s", err, b.String())
+		panic(err)
+	}
+
+	containers, err := cli.ContainerList(ctx, types.ContainerListOptions{All: true})
+	if err != nil {
+		return err
+	}
+
+	for _, container := range containers {
+
+		// I don't know why Names is a slice - I guess containers can have multiple names?
+		for _, name := range container.Names {
+			if strings.HasPrefix(name, "/"+prefix) {
+				fmt.Println("Killing and Removing Container", container.ID[:10])
+
+				if err := cli.ContainerRemove(ctx, container.ID, types.ContainerRemoveOptions{}); err != nil {
+					return err
+				}
+
+				break
+			}
+		}
 	}
 
 	return err
