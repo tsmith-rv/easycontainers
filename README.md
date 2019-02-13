@@ -159,6 +159,10 @@ if err != nil {
 }
 ```
 
+### Supported OS
+I'm using **macOS**, so that is all I'm positive about. Linux should be probably be fine -- Windows will not work by default. If you're using the
+Linux subsystem, then maybe? I'm not sure though.
+
 ### Gotchas
 - Despite going out of my way to make sure bound ports aren't given out, when running parallel tests I occasionally still
 get an error from one or more docker containers claiming I'm using a port that is already allocated, despite checking if
