@@ -10,15 +10,16 @@ import (
 
 	"strconv"
 
-	"time"
-
 	"bytes"
 	"path"
+
+	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
+	"github.com/mholt/archiver"
 )
 
 // MySQL is a container using the official mysql docker image.
@@ -71,9 +72,6 @@ func NewMySQLWithPort(name string, port int) *MySQL {
 // Container spins up the mysql container and runs. When the method exits, the
 // container is stopped and removed.
 func (m *MySQL) Container(f func() error) error {
-	CleanupContainer(m.ContainerName) // catch containers that previous cleanup missed
-	defer CleanupContainer(m.ContainerName)
-
 	ctx := context.Background()
 	reader, err := m.Client.ImagePull(ctx, "docker.io/library/mysql:latest", types.ImagePullOptions{})
 	if err != nil {
@@ -86,22 +84,21 @@ func (m *MySQL) Container(f func() error) error {
 		return err
 	}
 
-	p := nat.Port(fmt.Sprintf("%d/tcp", m.Port))
-
 	resp, err := m.Client.ContainerCreate(
 		ctx,
 		&container.Config{
-			Image: "mysql:latest",
-			ExposedPorts: nat.PortSet{
-				p: struct{}{},
-			},
+			Image:        "mysql:latest",
 			Env:          []string{"MYSQL_ROOT_PASSWORD=pass"},
 			AttachStdout: true,
 			AttachStderr: true,
+			Healthcheck: &container.HealthConfig{
+				Test:     []string{"CMD-SHELL", "mysql -uroot -ppass -e 'SELECT \"startup SQL initialized\" FROM mysql.z_z_'"},
+				Interval: 5 * time.Second,
+			},
 		},
 		&container.HostConfig{
 			PortBindings: nat.PortMap{
-				p: []nat.PortBinding{
+				"3306/tcp": []nat.PortBinding{
 					{
 						HostIP:   "0.0.0.0",
 						HostPort: strconv.Itoa(m.Port),
@@ -122,20 +119,30 @@ func (m *MySQL) Container(f func() error) error {
 		return err
 	}
 
-	go func() {
-		r, err := m.Client.ContainerLogs(ctx, resp.ID, types.ContainerLogsOptions{
-			ShowStderr: true,
-			ShowStdout: true,
-			Follow:     true,
-		})
-		if err != nil {
-			panic(err)
-		}
-		defer r.Close()
+	waitUntilHealthy := make(chan struct{})
 
-		_, err = io.Copy(os.Stdout, r)
-		if err != nil {
-			panic(err)
+	go func() {
+		prevState := ""
+		interval := time.NewTicker(1 * time.Second)
+
+		for range interval.C {
+			inspect, err := m.Client.ContainerInspect(ctx, resp.ID)
+			if err != nil {
+				panic(err)
+			}
+
+			if prevState != inspect.State.Health.Status {
+				fmt.Println("STATUS CHANGE:", inspect.State.Health.Status)
+				prevState = inspect.State.Health.Status
+
+				if inspect.State.Health.Status == "healthy" {
+					for _, l := range inspect.State.Health.Log {
+						fmt.Println(l.Output)
+					}
+
+					waitUntilHealthy <- struct{}{}
+				}
+			}
 		}
 	}()
 
@@ -177,46 +184,45 @@ func (m *MySQL) Container(f func() error) error {
 			return err
 		}
 
-		err = m.Client.CopyToContainer(ctx, resp.ID, "/docker-entrypoint-initdb.d/schema.sql", &b, types.CopyToContainerOptions{})
+		tar := archiver.NewTar()
+		err = tar.Archive([]string{file.Name()}, file.Name()+".tar")
 		if err != nil {
 			return err
+		}
+
+		tarFile, err := os.Open(file.Name() + ".tar")
+		if err != nil {
+			return err
+		}
+		defer tarFile.Close()
+		defer os.Remove(file.Name() + ".tar")
+
+		err = m.Client.CopyToContainer(ctx, resp.ID, "/docker-entrypoint-initdb.d", tarFile, types.CopyToContainerOptions{})
+		if err != nil {
+			return err
+		}
+
+		timeout := time.NewTimer(1 * time.Minute)
+
+		select {
+		case <-waitUntilHealthy:
+			// do nothing
+		case <-timeout.C:
+			inspect, err := m.Client.ContainerInspect(ctx, resp.ID)
+			if err != nil {
+				panic(err)
+			}
+
+			numOfLogs := len(inspect.State.Health.Log)
+			lastHealthLog := ""
+
+			if numOfLogs > 0 {
+				lastHealthLog = inspect.State.Health.Log[numOfLogs-1].Output
+			}
+
+			return fmt.Errorf("timed out waiting for container to be healthy, the last healtcheck error was: %s", lastHealthLog)
 		}
 	}
-	/*
-		_, err = m.Client.ContainerExecAttach(ctx, resp.ID, types.ExecConfig{
-			Cmd: []string{"until (mysql -uroot -ppass -e 'select \"initialization table found\" from mysql.z_z_ limit 1) do echo 'waiting for mysql to be up'; sleep 1; done; sleep 3;'"},
-		})
-		if err != nil {
-			return err
-		}
-
-		fmt.Println("oiwnefoinwef")
-
-		/*
-			waitForInitializeCmd := strCmdForContainer(
-				m.ContainerName,
-				"until (mysql -uroot -ppass -e 'select \"initialization table found\" from mysql.z_z_ limit 1') do echo 'waiting for mysql to be up'; sleep 1; done; sleep 3;",
-			)
-			cmdList = append(cmdList, waitForInitializeCmd)
-
-			for _, c := range cmdList {
-				err := RunCommandWithTimeout(c, 1*time.Minute)
-				if err != nil {
-					// I'm showing the logs for this container specifically because if there is
-					// a sql error on startup, it won't return from stderr, it will only show
-					// up in the logs
-					logs := Logs(m.ContainerName)
-					if logs != "" {
-						err = errors.New(fmt.Sprintln(err, "", " -- CONTAINER LOGS -- ", "", logs))
-					}
-
-					return err
-				}
-			}
-	*/
-
-	ti := time.NewTimer(5 * time.Minute)
-	<-ti.C
 
 	fmt.Println("successfully created mysql container")
 

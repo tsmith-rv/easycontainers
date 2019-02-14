@@ -18,6 +18,7 @@ import (
 	"sync"
 
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
 )
 
@@ -33,9 +34,17 @@ func init() {
 	rand.Seed(time.Now().UTC().UnixNano())
 
 	// cleanup any oustanding containers with the easycontainers prefix
-	CleanupAllContainers()
+	err := CleanupAllContainers()
+	if err != nil {
+		panic(err)
+	}
 
-	// cleanup any outstanding sql files in temp
+	err = WaitForCleanup()
+	if err != nil {
+		panic(err)
+	}
+
+	// cleanup any outstanding easycontainers files in temp
 	filepath.Walk(os.TempDir(), func(path string, info os.FileInfo, err error) error {
 		if strings.HasPrefix(info.Name(), prefix) {
 			os.Remove(path)
@@ -65,24 +74,24 @@ func CleanupAllContainers() error {
 		panic(err)
 	}
 
-	containers, err := cli.ContainerList(ctx, types.ContainerListOptions{All: true})
+	// only grab the containers created by easycontainers
+	args := filters.NewArgs()
+	args.Add("name", "/"+prefix)
+
+	containers, err := cli.ContainerList(ctx, types.ContainerListOptions{
+		Filters: args,
+	})
 	if err != nil {
 		return err
 	}
 
 	for _, container := range containers {
+		fmt.Println("Killing and Removing Container", container.ID[:10])
 
-		// I don't know why Names is a slice - I guess containers can have multiple names?
-		for _, name := range container.Names {
-			if strings.HasPrefix(name, "/"+prefix) {
-				fmt.Println("Killing and Removing Container", container.ID[:10])
-
-				if err := cli.ContainerRemove(ctx, container.ID, types.ContainerRemoveOptions{}); err != nil {
-					return err
-				}
-
-				break
-			}
+		if err := cli.ContainerRemove(ctx, container.ID, types.ContainerRemoveOptions{
+			Force: true,
+		}); err != nil {
+			return err
 		}
 	}
 
@@ -92,16 +101,38 @@ func CleanupAllContainers() error {
 // WaitForCleanup checks every second if there are any easycontainers containers still
 // live, and exits when there aren't, or when the timeout occurrs -- whichever comes first
 func WaitForCleanup() error {
-	cmd := exec.Command(
-		"/bin/bash",
-		"-c",
-		fmt.Sprintf(
-			`while [ "$(docker ps --filter="name=%s" --format="{{.ID}}")" ]; do echo 'waiting for cleanup to finish'; sleep 1; done`,
-			prefix,
-		),
-	)
+	ctx := context.Background()
+	cli, err := client.NewEnvClient()
+	if err != nil {
+		panic(err)
+	}
 
-	return RunCommandWithTimeout(cmd, 1*time.Minute)
+	interval := time.NewTicker(1 * time.Second)
+	timeout := time.NewTimer(15 * time.Second)
+
+	for range interval.C {
+		select {
+		case <-timeout.C:
+			return errors.New("timed out waiting for all easycontainers containers to get removed")
+		default:
+			// only grab the containers created by easycontainers
+			args := filters.NewArgs()
+			args.Add("name", "/"+prefix)
+
+			containers, err := cli.ContainerList(ctx, types.ContainerListOptions{
+				Filters: args,
+			})
+			if err != nil {
+				return err
+			}
+
+			if len(containers) == 0 {
+				return nil
+			}
+		}
+	}
+
+	return nil
 }
 
 // CleanupContainer stops the container with the specified name.
