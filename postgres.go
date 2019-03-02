@@ -2,14 +2,20 @@ package easycontainers
 
 import (
 	"bytes"
-	"errors"
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
-	"os/exec"
 	"path"
+	"strconv"
 	"time"
+
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/client"
+	"github.com/docker/go-connections/nat"
+	"github.com/mholt/archiver"
 )
 
 // Postgres is a container using the official postgres docker image.
@@ -19,6 +25,7 @@ import (
 //
 // Query is a string of SQL. If set, it will run the sql when initializing the container.
 type Postgres struct {
+	Client        *client.Client
 	ContainerName string
 	Port          int
 	Path          string
@@ -32,7 +39,13 @@ func NewPostgres(name string) (r *Postgres, port int) {
 		panic(err)
 	}
 
+	c, err := client.NewEnvClient()
+	if err != nil {
+		panic(err)
+	}
+
 	return &Postgres{
+		Client:        c,
 		ContainerName: prefix + "postgres-" + name,
 		Port:          port,
 	}, port
@@ -40,7 +53,13 @@ func NewPostgres(name string) (r *Postgres, port int) {
 
 // NewPostgresWithPort returns a new instance of Postgres using the specified port.
 func NewPostgresWithPort(name string, port int) *Postgres {
+	c, err := client.NewEnvClient()
+	if err != nil {
+		panic(err)
+	}
+
 	return &Postgres{
+		Client:        c,
 		ContainerName: prefix + "postgres-" + name,
 		Port:          port,
 	}
@@ -49,25 +68,83 @@ func NewPostgresWithPort(name string, port int) *Postgres {
 // Container spins up the postgres container and runs. When the method exits, the
 // container is stopped and removed.
 func (m *Postgres) Container(f func() error) error {
-	CleanupContainer(m.ContainerName) // catch containers that previous cleanup missed
-	defer CleanupContainer(m.ContainerName)
+	ctx := context.Background()
+	reader, err := m.Client.ImagePull(ctx, "docker.io/library/postgres:latest", types.ImagePullOptions{})
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
 
-	var cmdList []*exec.Cmd
+	_, err = io.Copy(os.Stdout, reader)
+	if err != nil {
+		return err
+	}
 
-	runContainerCmd := exec.Command(
-		"docker",
-		"run",
-		"--rm",
-		"-p",
-		fmt.Sprintf("%d:5432", m.Port),
-		"--name",
+	resp, err := m.Client.ContainerCreate(
+		ctx,
+		&container.Config{
+			Image: "postgres:latest",
+			Env:   []string{"POSTGRES_PASSWORD=pass"},
+			Healthcheck: &container.HealthConfig{
+				Test:     []string{"CMD-SHELL", "psql -U postgres -h localhost -c 'select 1 from postgres.public.z_z_ limit 1'"},
+				Interval: 5 * time.Second,
+				Timeout:  1 * time.Minute,
+			},
+		},
+		&container.HostConfig{
+			PortBindings: nat.PortMap{
+				"5432/tcp": []nat.PortBinding{
+					{
+						HostIP:   "0.0.0.0",
+						HostPort: strconv.Itoa(m.Port),
+					},
+				},
+			},
+		},
+		nil,
 		m.ContainerName,
-		"-e",
-		"POSTGRES_PASSWORD=pass",
-		"-d",
-		"postgres:latest",
 	)
-	cmdList = append(cmdList, runContainerCmd)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		m.Client.ContainerStop(ctx, resp.ID, durationPointer(30*time.Second))
+		m.Client.ContainerRemove(ctx, resp.ID, types.ContainerRemoveOptions{
+			Force: true,
+		})
+	}()
+
+	err = m.Client.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{})
+	if err != nil {
+		return err
+	}
+
+	waitUntilHealthy := make(chan struct{})
+
+	go func() {
+		prevState := ""
+		interval := time.NewTicker(1 * time.Second)
+
+		for range interval.C {
+			inspect, err := m.Client.ContainerInspect(ctx, resp.ID)
+			if err != nil {
+				panic(err)
+			}
+
+			if prevState != inspect.State.Health.Status {
+				fmt.Println("STATUS CHANGE:", inspect.State.Health.Status)
+				prevState = inspect.State.Health.Status
+
+				if inspect.State.Health.Status == "healthy" {
+					for _, l := range inspect.State.Health.Log {
+						fmt.Println(l.Output)
+					}
+
+					waitUntilHealthy <- struct{}{}
+				}
+			}
+		}
+	}()
 
 	var sql string
 
@@ -99,46 +176,51 @@ func (m *Postgres) Container(f func() error) error {
 			return err
 		}
 
-		// we create the table postgres.z_z_(id integer) after all the other sql has been run
+		// we create the table mysql.z_z_(id integer) after all the other sql has been run
 		// so that we can query the table to see if all the startup sql is finished running,
 		// which means that the container if fully initialized
-		_, err = io.Copy(file, bytes.NewBufferString(sql+";CREATE TABLE postgres.public.z_z_(id INTEGER);"))
+		_, err = io.Copy(file, bytes.NewBufferString(sql+";CREATE TABLE postgres.public.z_z_(id integer);"))
 		if err != nil {
 			return err
 		}
 
-		file.Close()
-
-		addStartupSQLFileCmd := exec.Command(
-			"/bin/bash",
-			"-c",
-			fmt.Sprintf(
-				`docker cp %s $(docker ps --filter="name=^/%s$" --format="{{.ID}}"):/docker-entrypoint-initdb.d`,
-				file.Name(),
-				m.ContainerName,
-			),
-		)
-		cmdList = append(cmdList, addStartupSQLFileCmd)
-	}
-
-	waitForInitializeCmd := strCmdForContainer(
-		m.ContainerName,
-		"until (psql -U postgres -h localhost -c \"select 1 from postgres.public.z_z_ limit 1\") do echo \"waiting for postgres to be up\"; sleep 1; done; sleep 3;",
-	)
-	cmdList = append(cmdList, waitForInitializeCmd)
-
-	for _, c := range cmdList {
-		err := RunCommandWithTimeout(c, 1*time.Minute)
+		tar := archiver.NewTar()
+		err = tar.Archive([]string{file.Name()}, file.Name()+".tar")
 		if err != nil {
-			// I'm showing the logs for this container specifically because if there is
-			// a sql error on startup, it won't return from stderr, it will only show
-			// up in the logs
-			logs := Logs(m.ContainerName)
-			if logs != "" {
-				err = errors.New(fmt.Sprintln(err, "", " -- CONTAINER LOGS -- ", "", logs))
+			return err
+		}
+
+		tarFile, err := os.Open(file.Name() + ".tar")
+		if err != nil {
+			return err
+		}
+		defer tarFile.Close()
+		defer os.Remove(file.Name() + ".tar")
+
+		err = m.Client.CopyToContainer(ctx, resp.ID, "/docker-entrypoint-initdb.d", tarFile, types.CopyToContainerOptions{})
+		if err != nil {
+			return err
+		}
+
+		timeout := time.NewTimer(1 * time.Minute)
+
+		select {
+		case <-waitUntilHealthy:
+			// do nothing
+		case <-timeout.C:
+			inspect, err := m.Client.ContainerInspect(ctx, resp.ID)
+			if err != nil {
+				panic(err)
 			}
 
-			return err
+			numOfLogs := len(inspect.State.Health.Log)
+			lastHealthLog := ""
+
+			if numOfLogs > 0 {
+				lastHealthLog = inspect.State.Health.Log[numOfLogs-1].Output
+			}
+
+			return fmt.Errorf("timed out waiting for container to be healthy, the last healtcheck error was: %s", lastHealthLog)
 		}
 	}
 

@@ -1,11 +1,9 @@
 package easycontainers
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"math/rand"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -76,9 +74,10 @@ func CleanupAllContainers() error {
 
 	// only grab the containers created by easycontainers
 	args := filters.NewArgs()
-	args.Add("name", "/"+prefix)
+	args.Add("name", prefix)
 
 	containers, err := cli.ContainerList(ctx, types.ContainerListOptions{
+		All:     true,
 		Filters: args,
 	})
 	if err != nil {
@@ -107,8 +106,10 @@ func WaitForCleanup() error {
 		panic(err)
 	}
 
-	interval := time.NewTicker(1 * time.Second)
-	timeout := time.NewTimer(15 * time.Second)
+	var (
+		interval = time.NewTicker(1 * time.Second)
+		timeout  = time.NewTimer(1 * time.Minute)
+	)
 
 	for range interval.C {
 		select {
@@ -135,98 +136,26 @@ func WaitForCleanup() error {
 	return nil
 }
 
-// CleanupContainer stops the container with the specified name.
-func CleanupContainer(name string) error {
-	cmd := exec.Command(
-		"/bin/bash",
-		"-c",
-		fmt.Sprintf(`docker stop $(docker ps --filter="name=^/%s$" --format="{{.ID}}")`, name),
-	)
-
-	var b bytes.Buffer
-	cmd.Stderr = &b
-
-	err := cmd.Run()
+func dockerExec(ctx context.Context, client *client.Client, containerID string, cmd []string) error {
+	e, err := client.ContainerExecCreate(ctx, containerID, types.ExecConfig{
+		Detach:       false,
+		AttachStderr: true,
+		AttachStdout: true,
+		Cmd:          cmd,
+	})
 	if err != nil {
-		return fmt.Errorf("error in command : %s -- %s", err, b.String())
+		return err
 	}
 
-	return err
-}
-
-// Logs runs the docker logs command on the specified container and returns the output
-func Logs(name string) string {
-	cmd := exec.Command(
-		"docker",
-		"logs",
-		name,
-	)
-
-	var outputBuf bytes.Buffer
-	cmd.Stderr = &outputBuf
-	cmd.Stdout = &outputBuf
-
-	cmd.Run()
-
-	return outputBuf.String()
-}
-
-// RunCommandWithTimeout will execute the specified cmd, but will timeout and
-// return and error after 1 minute.
-func RunCommandWithTimeout(cmd *exec.Cmd, timeout time.Duration) error {
-	finish := make(chan error)
-	timer := time.NewTimer(timeout)
-
-	go func() {
-		var err error
-
-		defer func() {
-			finish <- err
-		}()
-
-		var b bytes.Buffer
-		cmd.Stderr = &b
-		cmd.Stdout = os.Stdout
-
-		err = cmd.Run()
-		if err != nil {
-			err = fmt.Errorf("error in command : %s -- %s", err, b.String())
-			return
-		}
-	}()
-
-	select {
-	case err := <-finish:
-		if err != nil {
-			return err
-		}
-	case <-timer.C:
-		return errors.New("container timed out")
+	err = client.ContainerExecStart(ctx, e.ID, types.ExecStartCheck{
+		Detach: false,
+		Tty:    false,
+	})
+	if err != nil {
+		return err
 	}
 
 	return nil
-}
-
-func cmdForContainer(name string, cmd *exec.Cmd) *exec.Cmd {
-	return exec.Command(
-		"docker",
-		"exec",
-		name,
-		"/bin/bash",
-		"-c",
-		strings.Join(cmd.Args, " "),
-	)
-}
-
-func strCmdForContainer(name string, str string) *exec.Cmd {
-	return exec.Command(
-		"docker",
-		"exec",
-		name,
-		"/bin/bash",
-		"-c",
-		str,
-	)
 }
 
 func getFreePort() (int, error) {
@@ -259,4 +188,8 @@ func getFreePort() (int, error) {
 	}
 
 	return 0, errors.New("took too long to find free port")
+}
+
+func durationPointer(d time.Duration) *time.Duration {
+	return &d
 }

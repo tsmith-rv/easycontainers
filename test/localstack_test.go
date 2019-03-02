@@ -54,27 +54,33 @@ func Test_Localstack_Container(t *testing.T) {
 	}
 }
 
+func Test_Localstack_Container_NoServicesSpecified(t *testing.T) {
+	localstackContainer, ports := easycontainers.NewLocalstack(
+		"Test_Localstack_Container_NoServicesSpecified",
+	)
+	err := localstackContainer.Container(func() error {
+		return nil
+	})
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	for _, p := range ports {
+		isFree, err := isPortFree(p)
+		if !assert.NoError(t, err) {
+			return
+		}
+
+		if !assert.True(t, isFree, "port %d should now be available, but isn't", p) {
+			return
+		}
+	}
+}
+
 func Test_Localstack_SQS_SendMessage(t *testing.T) {
 	localstackContainer, ports := easycontainers.NewLocalstack(
 		"Test_Localstack_SQS_SendMessage",
 		easycontainers.ServiceSQS,
-		easycontainers.ServiceAPIGateway,
-		easycontainers.ServiceKinesis,
-		easycontainers.ServiceS3,
-		easycontainers.ServiceDynamoDB,
-		easycontainers.ServiceDynamoDBStreams,
-		easycontainers.ServiceElasticsearch,
-		easycontainers.ServiceFirehose,
-		easycontainers.ServiceLambda,
-		easycontainers.ServiceSNS,
-		easycontainers.ServiceRedshift,
-		easycontainers.ServiceES,
-		easycontainers.ServiceSES,
-		easycontainers.ServiceRoute53,
-		easycontainers.ServiceCloudformation,
-		easycontainers.ServiceCloudwatch,
-		easycontainers.ServiceSSM,
-		easycontainers.ServiceSecretsManager,
 	)
 
 	localstackContainer.
@@ -90,7 +96,7 @@ func Test_Localstack_SQS_SendMessage(t *testing.T) {
 			go func() {
 				defer wg.Done()
 
-				err := localstackContainer.Queues[0].SendMessage(localstackContainer.ContainerName, strconv.Itoa(i))
+				err := localstackContainer.Queues[0].SendMessage(strconv.Itoa(i))
 				if !assert.NoError(t, err) {
 					return
 				}
@@ -101,7 +107,7 @@ func Test_Localstack_SQS_SendMessage(t *testing.T) {
 			go func() {
 				defer wg.Done()
 
-				err := localstackContainer.Queues[1].SendMessage(localstackContainer.ContainerName, strconv.Itoa(i))
+				err := localstackContainer.Queues[1].SendMessage(strconv.Itoa(i))
 				if !assert.NoError(t, err) {
 					return
 				}
@@ -112,7 +118,7 @@ func Test_Localstack_SQS_SendMessage(t *testing.T) {
 			go func() {
 				defer wg.Done()
 
-				err := localstackContainer.Queues[2].SendMessage(localstackContainer.ContainerName, strconv.Itoa(i))
+				err := localstackContainer.Queues[2].SendMessage(strconv.Itoa(i))
 				if !assert.NoError(t, err) {
 					return
 				}
@@ -144,24 +150,7 @@ func Test_Localstack_SQS_SendMessage(t *testing.T) {
 func Test_Localstack_Lambda_SendPayload(t *testing.T) {
 	localstackContainer, ports := easycontainers.NewLocalstack(
 		"Test_Localstack_Lambda_SendPayload",
-		easycontainers.ServiceSQS,
-		easycontainers.ServiceAPIGateway,
-		easycontainers.ServiceKinesis,
-		easycontainers.ServiceS3,
-		easycontainers.ServiceDynamoDB,
-		easycontainers.ServiceDynamoDBStreams,
-		easycontainers.ServiceElasticsearch,
-		easycontainers.ServiceFirehose,
 		easycontainers.ServiceLambda,
-		easycontainers.ServiceSNS,
-		easycontainers.ServiceRedshift,
-		easycontainers.ServiceES,
-		easycontainers.ServiceSES,
-		easycontainers.ServiceRoute53,
-		easycontainers.ServiceCloudformation,
-		easycontainers.ServiceCloudwatch,
-		easycontainers.ServiceSSM,
-		easycontainers.ServiceSecretsManager,
 	)
 
 	localstackContainer.
@@ -177,7 +166,7 @@ func Test_Localstack_Lambda_SendPayload(t *testing.T) {
 			go func() {
 				defer wg.Done()
 
-				err := localstackContainer.Functions[0].SendPayload(localstackContainer.ContainerName, map[string]interface{}{
+				err := localstackContainer.Functions[0].SendPayload(map[string]interface{}{
 					"What is your name?": "tsmith-rv",
 					"How old are you?":   i,
 				})
@@ -191,7 +180,7 @@ func Test_Localstack_Lambda_SendPayload(t *testing.T) {
 			go func() {
 				defer wg.Done()
 
-				err := localstackContainer.Functions[1].SendPayload(localstackContainer.ContainerName, map[string]interface{}{
+				err := localstackContainer.Functions[1].SendPayload(map[string]interface{}{
 					"What is your name?": "tsmith-rv",
 					"How old are you?":   i,
 				})
@@ -205,7 +194,7 @@ func Test_Localstack_Lambda_SendPayload(t *testing.T) {
 			go func() {
 				defer wg.Done()
 
-				err := localstackContainer.Functions[2].SendPayload(localstackContainer.ContainerName, map[string]interface{}{
+				err := localstackContainer.Functions[2].SendPayload(map[string]interface{}{
 					"What is your name?": "tsmith-rv",
 					"How old are you?":   i,
 				})
@@ -240,24 +229,7 @@ func Test_Localstack_Lambda_SendPayload(t *testing.T) {
 func Test_Localstack_Lambda_SendPayload_BadPayload(t *testing.T) {
 	localstackContainer, ports := easycontainers.NewLocalstack(
 		"Test_Localstack_Lambda_SendPayload_BadPayload",
-		easycontainers.ServiceSQS,
-		easycontainers.ServiceAPIGateway,
-		easycontainers.ServiceKinesis,
-		easycontainers.ServiceS3,
-		easycontainers.ServiceDynamoDB,
-		easycontainers.ServiceDynamoDBStreams,
-		easycontainers.ServiceElasticsearch,
-		easycontainers.ServiceFirehose,
 		easycontainers.ServiceLambda,
-		easycontainers.ServiceSNS,
-		easycontainers.ServiceRedshift,
-		easycontainers.ServiceES,
-		easycontainers.ServiceSES,
-		easycontainers.ServiceRoute53,
-		easycontainers.ServiceCloudformation,
-		easycontainers.ServiceCloudwatch,
-		easycontainers.ServiceSSM,
-		easycontainers.ServiceSecretsManager,
 	)
 
 	localstackContainer.
@@ -267,9 +239,10 @@ func Test_Localstack_Lambda_SendPayload_BadPayload(t *testing.T) {
 
 	err := localstackContainer.Container(func() error {
 		for _, lambda := range localstackContainer.Functions {
-			err := lambda.SendPayload(localstackContainer.ContainerName, map[string]interface{}{
-				"What is your name?": 3, // value should be a string, not an int
-				"How old are you?":   33,
+			err := lambda.SendPayload(map[string]interface{}{
+				"What is your name?":   3,
+				"How old are you?":     33,
+				"Some Other Question?": "some answer",
 			})
 			if !assert.Error(t, err) {
 				return nil

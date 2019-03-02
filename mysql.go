@@ -87,13 +87,12 @@ func (m *MySQL) Container(f func() error) error {
 	resp, err := m.Client.ContainerCreate(
 		ctx,
 		&container.Config{
-			Image:        "mysql:latest",
-			Env:          []string{"MYSQL_ROOT_PASSWORD=pass"},
-			AttachStdout: true,
-			AttachStderr: true,
+			Image: "mysql:latest",
+			Env:   []string{"MYSQL_ROOT_PASSWORD=pass"},
 			Healthcheck: &container.HealthConfig{
 				Test:     []string{"CMD-SHELL", "mysql -uroot -ppass -e 'SELECT \"startup SQL initialized\" FROM mysql.z_z_'"},
 				Interval: 5 * time.Second,
+				Timeout:  1 * time.Minute,
 			},
 		},
 		&container.HostConfig{
@@ -112,7 +111,12 @@ func (m *MySQL) Container(f func() error) error {
 	if err != nil {
 		return err
 	}
-	defer m.Client.ContainerRemove(ctx, resp.ID, types.ContainerRemoveOptions{})
+	defer func() {
+		m.Client.ContainerStop(ctx, resp.ID, durationPointer(30*time.Second))
+		m.Client.ContainerRemove(ctx, resp.ID, types.ContainerRemoveOptions{
+			Force: true,
+		})
+	}()
 
 	err = m.Client.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{})
 	if err != nil {

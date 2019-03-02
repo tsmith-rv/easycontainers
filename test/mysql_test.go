@@ -18,7 +18,7 @@ func Test_MySQL_Container(t *testing.T) {
 	// - Path is loading the authors
 	// - Query is loading the posts
 	container.Path = "/src/github.com/tsmith-rv/easycontainers/test/mysql-test.sql"
-	container.Query = `
+	container.Query = `	
 		CREATE TABLE blog.posts (
 		  id int(11) NOT NULL AUTO_INCREMENT,
 		  author_id int(11) NOT NULL,

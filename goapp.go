@@ -1,13 +1,7 @@
 package easycontainers
 
 import (
-	"bytes"
-	"fmt"
-	"os"
-	"os/exec"
-
 	"path"
-	"time"
 )
 
 // GoApp is a containerized version of the specified Go application.
@@ -53,106 +47,108 @@ func NewGoAppWithPort(name string, port int, app, binary string) *GoApp {
 // Container spins up the application container and runs. When the method exits, the
 // container is stopped and removed.
 func (g *GoApp) Container(f func() error) error {
-	CleanupContainer(g.ContainerName)
-	defer CleanupContainer(g.ContainerName)
+	/*
+		CleanupContainer(g.ContainerName)
+		defer CleanupContainer(g.ContainerName)
 
-	var cmdList []*exec.Cmd
+		var cmdList []*exec.Cmd
 
-	var runContainerCmd *exec.Cmd
-	{
-		var environmentArgs []string
-		for k, v := range g.Environment {
-			environmentArgs = append(environmentArgs, "-e", fmt.Sprintf("%s=%s", k, v))
+		var runContainerCmd *exec.Cmd
+		{
+			var environmentArgs []string
+			for k, v := range g.Environment {
+				environmentArgs = append(environmentArgs, "-e", fmt.Sprintf("%s=%s", k, v))
+			}
+
+			runArgs := []string{
+				"run",
+				"--rm",
+				"-p",
+				fmt.Sprintf("%d:%d", g.Port, g.Port),
+				"--name",
+				g.ContainerName,
+				"-d",
+				"-it",
+				"-w",
+				g.AppDir,
+			}
+
+			runArgs = append(runArgs, environmentArgs...)
+			runArgs = append(
+				runArgs,
+				"-e",
+				fmt.Sprintf("GOPATH=%s", GoPath()),
+				"golang:alpine",
+			)
+
+			runContainerCmd = exec.Command(
+				"docker",
+				runArgs...,
+			)
 		}
 
-		runArgs := []string{
-			"run",
-			"--rm",
-			"-p",
-			fmt.Sprintf("%d:%d", g.Port, g.Port),
-			"--name",
-			g.ContainerName,
-			"-d",
-			"-it",
-			"-w",
-			g.AppDir,
-		}
-
-		runArgs = append(runArgs, environmentArgs...)
-		runArgs = append(
-			runArgs,
-			"-e",
-			fmt.Sprintf("GOPATH=%s", GoPath()),
-			"golang:alpine",
-		)
-
-		runContainerCmd = exec.Command(
-			"docker",
-			runArgs...,
-		)
-	}
-
-	copyProjectCmd := exec.Command(
-		"/bin/bash",
-		"-c",
-		fmt.Sprintf(
-			`docker cp %s/. $(docker ps --filter="name=^/%s$" --format="{{.ID}}"):%s`,
-			g.AppDir,
-			g.ContainerName,
-			g.AppDir,
-		),
-	)
-
-	buildProjectCmd := strCmdForContainer(
-		g.ContainerName,
-		fmt.Sprintf("go build %s", g.BuildDir),
-	)
-
-	cmdList = append(
-		cmdList,
-		runContainerCmd,
-		copyProjectCmd,
-		buildProjectCmd,
-	)
-
-	for _, c := range cmdList {
-		err := RunCommandWithTimeout(c, 1*time.Minute)
-		if err != nil {
-			return err
-		}
-	}
-
-	{
-		runBinaryCmd := strCmdForContainer(
-			g.ContainerName,
-			fmt.Sprintf("./%s", path.Base(g.BuildDir)),
-		)
-
-		b := bytes.Buffer{}
-		runBinaryCmd.Stderr = &b
-		runBinaryCmd.Stdout = os.Stdout
-		err := runBinaryCmd.Start()
-		if err != nil {
-			return err
-		}
-	}
-
-	{
-		waitForAppInitialization := strCmdForContainer(
-			g.ContainerName,
+		copyProjectCmd := exec.Command(
+			"/bin/bash",
+			"-c",
 			fmt.Sprintf(
-				"until (curl http://localhost:%d/health/) do echo 'waiting for app to be up'; sleep 1; done",
-				g.Port,
+				`docker cp %s/. $(docker ps --filter="name=^/%s$" --format="{{.ID}}"):%s`,
+				g.AppDir,
+				g.ContainerName,
+				g.AppDir,
 			),
 		)
 
-		err := RunCommandWithTimeout(waitForAppInitialization, 1*time.Minute)
-		if err != nil {
-			return err
-		}
-	}
+		buildProjectCmd := strCmdForContainer(
+			g.ContainerName,
+			fmt.Sprintf("go build %s", g.BuildDir),
+		)
 
-	fmt.Println("successfully created goapp container")
+		cmdList = append(
+			cmdList,
+			runContainerCmd,
+			copyProjectCmd,
+			buildProjectCmd,
+		)
+
+		for _, c := range cmdList {
+			err := RunCommandWithTimeout(c, 1*time.Minute)
+			if err != nil {
+				return err
+			}
+		}
+
+		{
+			runBinaryCmd := strCmdForContainer(
+				g.ContainerName,
+				fmt.Sprintf("./%s", path.Base(g.BuildDir)),
+			)
+
+			b := bytes.Buffer{}
+			runBinaryCmd.Stderr = &b
+			runBinaryCmd.Stdout = os.Stdout
+			err := runBinaryCmd.Start()
+			if err != nil {
+				return err
+			}
+		}
+
+		{
+			waitForAppInitialization := strCmdForContainer(
+				g.ContainerName,
+				fmt.Sprintf(
+					"until (curl http://localhost:%d/health/) do echo 'waiting for app to be up'; sleep 1; done",
+					g.Port,
+				),
+			)
+
+			err := RunCommandWithTimeout(waitForAppInitialization, 1*time.Minute)
+			if err != nil {
+				return err
+			}
+		}
+
+		fmt.Println("successfully created goapp container")
+	*/
 
 	return f()
 }

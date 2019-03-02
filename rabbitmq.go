@@ -3,7 +3,6 @@ package easycontainers
 import (
 	"fmt"
 	"os/exec"
-	"time"
 )
 
 const (
@@ -78,79 +77,80 @@ func NewRabbitMQWithPort(name string, port int) *RabbitMQ {
 // The RabbitMQ components will be created in the following order:
 // Vhosts -> Exchanges -> Queues -> Bindings
 func (r *RabbitMQ) Container(f func() error) error {
-	CleanupContainer(r.ContainerName)
-	defer CleanupContainer(r.ContainerName)
+	/*
+		CleanupContainer(r.ContainerName)
+		defer CleanupContainer(r.ContainerName)
 
-	var cmdList []*exec.Cmd
+		var cmdList []*exec.Cmd
 
-	runContainerCmd := exec.Command(
-		"docker",
-		"run",
-		"--rm",
-		"-p",
-		fmt.Sprintf("%d:5672", r.Port),
-		"--name",
-		r.ContainerName,
-		"-d",
-		"rabbitmq:management-alpine",
-	)
-	cmdList = append(cmdList, runContainerCmd)
-
-	waitForInitializeCmd := strCmdForContainer(
-		r.ContainerName,
-		"until $(rabbitmqadmin -q list queues); do echo 'waiting for RabbitMQ container to be up'; sleep 1; done",
-	)
-	cmdList = append(cmdList, waitForInitializeCmd)
-
-	for _, x := range r.Vhosts {
-		cmdList = append(
-			cmdList,
-			cmdForContainer(
-				r.ContainerName,
-				x.CreateCommand(),
-			),
+		runContainerCmd := exec.Command(
+			"docker",
+			"run",
+			"--rm",
+			"-p",
+			fmt.Sprintf("%d:5672", r.Port),
+			"--name",
+			r.ContainerName,
+			"-d",
+			"rabbitmq:management-alpine",
 		)
-	}
+		cmdList = append(cmdList, runContainerCmd)
 
-	for _, x := range r.Exchanges {
-		cmdList = append(
-			cmdList,
-			cmdForContainer(
-				r.ContainerName,
-				x.CreateCommand(),
-			),
+		waitForInitializeCmd := strCmdForContainer(
+			r.ContainerName,
+			"until $(rabbitmqadmin -q list queues); do echo 'waiting for RabbitMQ container to be up'; sleep 1; done",
 		)
-	}
+		cmdList = append(cmdList, waitForInitializeCmd)
 
-	for _, x := range r.Queues {
-		cmdList = append(
-			cmdList,
-			cmdForContainer(
-				r.ContainerName,
-				x.CreateCommand(),
-			),
-		)
-	}
-
-	for _, x := range r.Bindings {
-		cmdList = append(
-			cmdList,
-			cmdForContainer(
-				r.ContainerName,
-				x.CreateCommand(),
-			),
-		)
-	}
-
-	for _, c := range cmdList {
-		err := RunCommandWithTimeout(c, 1*time.Minute)
-		if err != nil {
-			return err
+		for _, x := range r.Vhosts {
+			cmdList = append(
+				cmdList,
+				cmdForContainer(
+					r.ContainerName,
+					x.CreateCommand(),
+				),
+			)
 		}
-	}
 
-	fmt.Println("successfully created rabbitmq container")
+		for _, x := range r.Exchanges {
+			cmdList = append(
+				cmdList,
+				cmdForContainer(
+					r.ContainerName,
+					x.CreateCommand(),
+				),
+			)
+		}
 
+		for _, x := range r.Queues {
+			cmdList = append(
+				cmdList,
+				cmdForContainer(
+					r.ContainerName,
+					x.CreateCommand(),
+				),
+			)
+		}
+
+		for _, x := range r.Bindings {
+			cmdList = append(
+				cmdList,
+				cmdForContainer(
+					r.ContainerName,
+					x.CreateCommand(),
+				),
+			)
+		}
+
+		for _, c := range cmdList {
+			err := RunCommandWithTimeout(c, 1*time.Minute)
+			if err != nil {
+				return err
+			}
+		}
+
+		fmt.Println("successfully created rabbitmq container")
+	*/
 	return f()
 }
 
