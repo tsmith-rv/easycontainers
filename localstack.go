@@ -84,12 +84,6 @@ var initializations = map[string]string{
 	ServiceSecretsManager:  "secretsmanager get-random-password",
 }
 
-type containerInfo struct {
-	Ctx         context.Context
-	Client      *client.Client
-	ContainerID string
-}
-
 // SQSQueue is a queue in SQS in Localstack (who knew?)
 type SQSQueue struct {
 	Name      string

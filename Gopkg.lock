@@ -2,6 +2,12 @@
 
 
 [[projects]]
+  name = "cloud.google.com/go"
+  packages = ["civil"]
+  revision = "c9474f2f8deb81759839474b6bd1726bbfe1c1c4"
+  version = "v0.36.0"
+
+[[projects]]
   name = "github.com/Microsoft/go-winio"
   packages = ["."]
   revision = "97e4973ce50b2ff5f09635a57e2b88a037aae829"
@@ -12,6 +18,15 @@
   packages = ["spew"]
   revision = "8991bc29aa16c548c550c7ff78260e27b9ab7c73"
   version = "v1.1.1"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/denisenkom/go-mssqldb"
+  packages = [
+    ".",
+    "internal/cp"
+  ]
+  revision = "df6d76eb92899e4dfe4db66d53b187c89d34be37"
 
 [[projects]]
   name = "github.com/docker/distribution"
@@ -168,6 +183,12 @@
 
 [[projects]]
   branch = "master"
+  name = "golang.org/x/crypto"
+  packages = ["md4"]
+  revision = "8dd112bcdc25174059e45e07517d9fc663123347"
+
+[[projects]]
+  branch = "master"
   name = "golang.org/x/net"
   packages = [
     "context",
@@ -192,6 +213,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "8313c6f555d64fce7feacecd574e53d8e9355235b3807440d213b8db6009e7ca"
+  inputs-digest = "1c2a23e8099799293b620dafd6c1637fc47d902e798e073b5f5e5a44736fcc2e"
   solver-name = "gps-cdcl"
   solver-version = 1

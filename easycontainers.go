@@ -27,6 +27,12 @@ var (
 	allocatedPorts  = map[int]struct{}{}
 )
 
+type containerInfo struct {
+	Ctx         context.Context
+	Client      *client.Client
+	ContainerID string
+}
+
 func init() {
 	// we random numbers for port generation
 	rand.Seed(time.Now().UTC().UnixNano())
