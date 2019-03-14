@@ -19,16 +19,15 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
-	"github.com/mholt/archiver"
 )
 
-// SqlServer is a container using the official mysql docker image.
+// SQLServer is a container using the official sqlserver docker image.
 //
 // Path is a path to a sql file, relative to the GOPATH. If set, it will run the sql in
 // the file when initializing the container.
 //
 // Query is a string of SQL. If set, it will run the sql when initializing the container.
-type SqlServer struct {
+type SQLServer struct {
 	Client        *client.Client
 	ContainerName string
 	Port          int
@@ -36,8 +35,8 @@ type SqlServer struct {
 	Query         string
 }
 
-// NewSqlServer returns a new instance of SqlServer and the port it will be using.
-func NewSqlServer(name string) (r *SqlServer, port int) {
+// NewSQLServer returns a new instance of SQLServer and the port it will be using.
+func NewSQLServer(name string) (r *SQLServer, port int) {
 	port, err := getFreePort()
 	if err != nil {
 		panic(err)
@@ -48,30 +47,30 @@ func NewSqlServer(name string) (r *SqlServer, port int) {
 		panic(err)
 	}
 
-	return &SqlServer{
+	return &SQLServer{
 		Client:        c,
 		ContainerName: prefix + "sqlserver-" + name,
 		Port:          port,
 	}, port
 }
 
-// NewSqlServerWithPort returns a new instance of SqlServer using the specified port.
-func NewSqlServerWithPort(name string, port int) *SqlServer {
+// NewSQLServerWithPort returns a new instance of SQLServer using the specified port.
+func NewSQLServerWithPort(name string, port int) *SQLServer {
 	c, err := client.NewEnvClient()
 	if err != nil {
 		panic(err)
 	}
 
-	return &SqlServer{
+	return &SQLServer{
 		Client:        c,
 		ContainerName: prefix + "sqlserver-" + name,
 		Port:          port,
 	}
 }
 
-// Container spins up the mysql container and runs. When the method exits, the
+// Container spins up the sqlserver container and runs. When the method exits, the
 // container is stopped and removed.
-func (m *SqlServer) Container(f func() error) error {
+func (m *SQLServer) Container(f func() error) error {
 	ctx := context.Background()
 	reader, err := m.Client.ImagePull(ctx, "mcr.microsoft.com/mssql/server:2017-latest", types.ImagePullOptions{})
 	if err != nil {
@@ -84,6 +83,8 @@ func (m *SqlServer) Container(f func() error) error {
 		return err
 	}
 
+	stopHealthCheck := make(chan struct{})
+
 	resp, err := m.Client.ContainerCreate(
 		ctx,
 		&container.Config{
@@ -93,7 +94,7 @@ func (m *SqlServer) Container(f func() error) error {
 				"ACCEPT_EULA=Y",
 			},
 			Healthcheck: &container.HealthConfig{
-				Test:     []string{"CMD-SHELL", "/opt/mssql-tools/bin/sqlcmd -U SA -P Passpass_1 -b -Q 'SELECT \"startup SQL initialized\" FROM temp_schema.zz'"},
+				Test:     []string{"CMD-SHELL", "/opt/mssql-tools/bin/sqlcmd -U SA -P Passpass_1 -b -Q 'SELECT \"startup SQL initialized\" FROM master.temp_schema.zz'"},
 				Interval: 5 * time.Second,
 				Timeout:  1 * time.Minute,
 			},
@@ -115,6 +116,8 @@ func (m *SqlServer) Container(f func() error) error {
 		return err
 	}
 	defer func() {
+		stopHealthCheck <- struct{}{}
+
 		m.Client.ContainerStop(ctx, resp.ID, durationPointer(30*time.Second))
 		m.Client.ContainerRemove(ctx, resp.ID, types.ContainerRemoveOptions{
 			Force: true,
@@ -138,6 +141,12 @@ func (m *SqlServer) Container(f func() error) error {
 		hasStarted := false
 
 		for range interval.C {
+			select {
+			case <-stopHealthCheck:
+				return
+			default:
+			}
+
 			inspect, err := m.Client.ContainerInspect(ctx, resp.ID)
 			if err != nil {
 				panic(err)
@@ -196,25 +205,26 @@ func (m *SqlServer) Container(f func() error) error {
 		// we create the table temp_schema.zz (id integer) after all the other sql has been run
 		// so that we can query the table to see if all the startup sql is finished running,
 		// which means that the container if fully initialized
-		_, err = io.Copy(file, bytes.NewBufferString("EXEC(N'CREATE SCHEMA temp_schema'); "+sql+";CREATE TABLE temp_schema.zz (id integer);"))
+		_, err = io.Copy(file, bytes.NewBufferString(`
+		CREATE SCHEMA temp_schema
+		GO
+		CREATE TABLE temp_schema.zz(id int)
+		GO
+		`+sql))
 		if err != nil {
 			return err
 		}
 
-		tar := archiver.NewTar()
-		err = tar.Archive([]string{file.Name()}, file.Name()+".tar")
+		file.Close()
+
+		tarContent := bytes.Buffer{}
+
+		err = Tar(file.Name(), &tarContent)
 		if err != nil {
 			return err
 		}
 
-		tarFile, err := os.Open(file.Name() + ".tar")
-		if err != nil {
-			return err
-		}
-		defer tarFile.Close()
-		defer os.Remove(file.Name() + ".tar")
-
-		err = m.Client.CopyToContainer(ctx, resp.ID, "/tmp", tarFile, types.CopyToContainerOptions{})
+		err = m.Client.CopyToContainer(ctx, resp.ID, "/tmp", &tarContent, types.CopyToContainerOptions{})
 		if err != nil {
 			return err
 		}

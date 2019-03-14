@@ -15,7 +15,6 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
-	"github.com/mholt/archiver"
 )
 
 // Postgres is a container using the official postgres docker image.
@@ -80,6 +79,8 @@ func (m *Postgres) Container(f func() error) error {
 		return err
 	}
 
+	stopHealthCheck := make(chan struct{})
+
 	resp, err := m.Client.ContainerCreate(
 		ctx,
 		&container.Config{
@@ -108,6 +109,8 @@ func (m *Postgres) Container(f func() error) error {
 		return err
 	}
 	defer func() {
+		stopHealthCheck <- struct{}{}
+
 		m.Client.ContainerStop(ctx, resp.ID, durationPointer(30*time.Second))
 		m.Client.ContainerRemove(ctx, resp.ID, types.ContainerRemoveOptions{
 			Force: true,
@@ -126,6 +129,12 @@ func (m *Postgres) Container(f func() error) error {
 		interval := time.NewTicker(1 * time.Second)
 
 		for range interval.C {
+			select {
+			case <-stopHealthCheck:
+				return
+			default:
+			}
+
 			inspect, err := m.Client.ContainerInspect(ctx, resp.ID)
 			if err != nil {
 				panic(err)
@@ -176,7 +185,7 @@ func (m *Postgres) Container(f func() error) error {
 			return err
 		}
 
-		// we create the table mysql.z_z_(id integer) after all the other sql has been run
+		// we create the table postgres.public.z_z_(id integer) after all the other sql has been run
 		// so that we can query the table to see if all the startup sql is finished running,
 		// which means that the container if fully initialized
 		_, err = io.Copy(file, bytes.NewBufferString(sql+";CREATE TABLE postgres.public.z_z_(id integer);"))
@@ -184,20 +193,16 @@ func (m *Postgres) Container(f func() error) error {
 			return err
 		}
 
-		tar := archiver.NewTar()
-		err = tar.Archive([]string{file.Name()}, file.Name()+".tar")
+		file.Close()
+
+		tarContent := bytes.Buffer{}
+
+		err = Tar(file.Name(), &tarContent)
 		if err != nil {
 			return err
 		}
 
-		tarFile, err := os.Open(file.Name() + ".tar")
-		if err != nil {
-			return err
-		}
-		defer tarFile.Close()
-		defer os.Remove(file.Name() + ".tar")
-
-		err = m.Client.CopyToContainer(ctx, resp.ID, "/docker-entrypoint-initdb.d", tarFile, types.CopyToContainerOptions{})
+		err = m.Client.CopyToContainer(ctx, resp.ID, "/docker-entrypoint-initdb.d", &tarContent, types.CopyToContainerOptions{})
 		if err != nil {
 			return err
 		}

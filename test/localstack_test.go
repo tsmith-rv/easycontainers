@@ -240,9 +240,8 @@ func Test_Localstack_Lambda_SendPayload_BadPayload(t *testing.T) {
 	err := localstackContainer.Container(func() error {
 		for _, lambda := range localstackContainer.Functions {
 			err := lambda.SendPayload(map[string]interface{}{
-				"What is your name?":   3,
-				"How old are you?":     33,
-				"Some Other Question?": "some answer",
+				"What is your name?": "tim",
+				"How old are you?":   "22", // should be an int
 			})
 			if !assert.Error(t, err) {
 				return nil

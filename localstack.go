@@ -9,11 +9,11 @@ import (
 	"strings"
 	"sync"
 
-	"os/exec"
-
 	"encoding/json"
 
 	"time"
+
+	"bytes"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -121,7 +121,7 @@ type Localstack struct {
 func NewLocalstack(name string, services ...string) (r *Localstack, portMap map[string]int) {
 	// if no services are specified, startup all services
 	if len(services) == 0 {
-		for service, _ := range ports {
+		for service := range ports {
 			services = append(services, service)
 		}
 	}
@@ -156,7 +156,7 @@ func NewLocalstack(name string, services ...string) (r *Localstack, portMap map[
 func NewLocalstackWithPortMap(name string, portMap map[string]int, services ...string) *Localstack {
 	// if no services are specified, startup all services
 	if len(services) == 0 {
-		for service, _ := range ports {
+		for service := range ports {
 			services = append(services, service)
 		}
 	}
@@ -187,25 +187,23 @@ func (l *LambdaFunction) SendPayload(payload map[string]interface{}) error {
 		return err
 	}
 
-	str := "'" + string(payloadJSON) + "'"
-
 	return dockerExec(
 		l.container.Ctx,
 		l.container.Client,
 		l.container.ContainerID,
 		[]string{
-			"/root/.local/bin/aws",
+			"aws",
 			"--endpoint-url",
 			"http://localhost:4574",
-			"lambda",
-			"invoke",
 			"--region",
 			"us-east-1",
+			"lambda",
+			"invoke",
 			"--function-name",
 			l.FunctionName,
 			"output.out",
 			"--payload",
-			str,
+			string(payloadJSON),
 		},
 	)
 }
@@ -213,7 +211,7 @@ func (l *LambdaFunction) SendPayload(payload map[string]interface{}) error {
 // CreateCommand returns a command for creating the lambda from the command line.
 func (l *LambdaFunction) CreateCommand() []string {
 	return []string{
-		"/root/.local/bin/aws",
+		"aws",
 		"--endpoint-url",
 		"http://localhost:4574",
 		"lambda",
@@ -238,7 +236,7 @@ func (l *LambdaFunction) CreateCommand() []string {
 // CreateCommand returns a command for creating the queue from the command line.
 func (q *SQSQueue) CreateCommand() []string {
 	return []string{
-		"/root/.local/bin/aws",
+		"aws",
 		"--endpoint-url",
 		"http://localhost:4576",
 		"sqs",
@@ -251,13 +249,13 @@ func (q *SQSQueue) CreateCommand() []string {
 }
 
 // SendMessage sends the specified message to the queue in the container
-func (l *SQSQueue) SendMessage(msg string) error {
+func (q *SQSQueue) SendMessage(msg string) error {
 	return dockerExec(
-		l.container.Ctx,
-		l.container.Client,
-		l.container.ContainerID,
+		q.container.Ctx,
+		q.container.Client,
+		q.container.ContainerID,
 		[]string{
-			"/root/.local/bin/aws",
+			"aws",
 			"--region",
 			"us-east-1",
 			"--endpoint-url",
@@ -265,7 +263,7 @@ func (l *SQSQueue) SendMessage(msg string) error {
 			"sqs",
 			"send-message",
 			"--queue-url",
-			fmt.Sprintf("http://localhost:4576/queue/%s", l.Name),
+			fmt.Sprintf("http://localhost:4576/queue/%s", q.Name),
 			"--message-body",
 			fmt.Sprintf(`"%s"`, msg),
 		},
@@ -407,10 +405,10 @@ func (l *Localstack) Container(f func() error) error {
 				dockerClient,
 				resp.ID,
 				[]string{
-					"sh",
+					"/bin/bash",
 					"-c",
 					fmt.Sprintf(
-						"until (/root/.local/bin/aws --region us-east-1 --endpoint-url=http://localhost:%d %s) do echo 'waiting for localstack - %s to be up'; sleep 1; done",
+						"until (aws --region us-east-1 --endpoint-url=http://localhost:%d %s) do echo 'waiting for localstack - %s to be up'; sleep 1; done",
 						ports[s],
 						initializations[s],
 						s,
@@ -439,18 +437,16 @@ func (l *Localstack) Container(f func() error) error {
 	}
 
 	for _, lambda := range l.Functions {
-		addLambdaZip := exec.Command(
-			"/bin/bash",
-			"-c",
-			fmt.Sprintf(
-				`docker cp %s $(docker ps --filter="name=^/%s$" --format="{{.ID}}"):/`,
-				path.Join(GoPath(), lambda.Zip),
-				l.ContainerName,
-			),
-		)
+		filePath := path.Join(GoPath(), lambda.Zip)
 
-		addLambdaZip.Stderr = io.MultiWriter(os.Stdout, os.Stderr)
-		err = addLambdaZip.Run()
+		tarContent := bytes.Buffer{}
+
+		err = Tar(filePath, &tarContent)
+		if err != nil {
+			return err
+		}
+
+		err = dockerClient.CopyToContainer(ctx, resp.ID, "/", &tarContent, types.CopyToContainerOptions{})
 		if err != nil {
 			return err
 		}

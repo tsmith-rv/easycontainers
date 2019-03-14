@@ -94,7 +94,7 @@ func NewRabbitMQWithPort(name string, port int) *RabbitMQ {
 	}
 }
 
-// Container spins up the mysql container and runs. When the method exits, the
+// Container spins up the rabbitmq container and runs. When the method exits, the
 // container is stopped and removed.
 //
 // The RabbitMQ components will be created in the following order:
@@ -111,6 +111,8 @@ func (r *RabbitMQ) Container(f func() error) error {
 	if err != nil {
 		return err
 	}
+
+	stopHealthCheck := make(chan struct{})
 
 	resp, err := r.Client.ContainerCreate(
 		ctx,
@@ -139,6 +141,8 @@ func (r *RabbitMQ) Container(f func() error) error {
 		return err
 	}
 	defer func() {
+		stopHealthCheck <- struct{}{}
+
 		r.Client.ContainerStop(ctx, resp.ID, durationPointer(30*time.Second))
 		r.Client.ContainerRemove(ctx, resp.ID, types.ContainerRemoveOptions{
 			Force: true,
@@ -157,6 +161,12 @@ func (r *RabbitMQ) Container(f func() error) error {
 		interval := time.NewTicker(1 * time.Second)
 
 		for range interval.C {
+			select {
+			case <-stopHealthCheck:
+				return
+			default:
+			}
+
 			inspect, err := r.Client.ContainerInspect(ctx, resp.ID)
 			if err != nil {
 				panic(err)

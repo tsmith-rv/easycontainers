@@ -77,29 +77,10 @@
   version = "v0.3.3"
 
 [[projects]]
-  branch = "master"
-  name = "github.com/dsnet/compress"
-  packages = [
-    ".",
-    "bzip2",
-    "bzip2/internal/sais",
-    "internal",
-    "internal/errors",
-    "internal/prefix"
-  ]
-  revision = "cc9eb1d7ad760af14e8f918698f745e80377af4f"
-
-[[projects]]
   name = "github.com/go-sql-driver/mysql"
   packages = ["."]
   revision = "72cd26f257d44c1114970e19afddcd812016007e"
   version = "v1.4.1"
-
-[[projects]]
-  branch = "master"
-  name = "github.com/golang/snappy"
-  packages = ["."]
-  revision = "2e65f85255dbc3072edf28d6b5b8efc472979f5a"
 
 [[projects]]
   name = "github.com/jmoiron/sqlx"
@@ -120,31 +101,10 @@
   version = "v1.0.0"
 
 [[projects]]
-  name = "github.com/mholt/archiver"
-  packages = ["."]
-  revision = "d572b2e8b82726cee9476d1b9d63a7fe9b601ff1"
-  version = "v3.1.1"
-
-[[projects]]
-  name = "github.com/nwaples/rardecode"
-  packages = ["."]
-  revision = "cc3e4b2381762c56dbcdf9f93be03349a1dc1c14"
-  version = "v1.0.0"
-
-[[projects]]
   name = "github.com/opencontainers/go-digest"
   packages = ["."]
   revision = "279bed98673dd5bef374d3b6e4b09e2af76183bf"
   version = "v1.0.0-rc1"
-
-[[projects]]
-  name = "github.com/pierrec/lz4"
-  packages = [
-    ".",
-    "internal/xxh32"
-  ]
-  revision = "473cd7ce01a1113208073166464b98819526150e"
-  version = "v2.0.8"
 
 [[projects]]
   name = "github.com/pkg/errors"
@@ -163,23 +123,6 @@
   packages = ["assert"]
   revision = "ffdc059bfe9ce6a4e144ba849dbedead332c6053"
   version = "v1.3.0"
-
-[[projects]]
-  name = "github.com/ulikunitz/xz"
-  packages = [
-    ".",
-    "internal/hash",
-    "internal/xlog",
-    "lzma"
-  ]
-  revision = "590df8077fbcb06ad62d7714da06c00e5dd2316d"
-  version = "v0.5.5"
-
-[[projects]]
-  branch = "master"
-  name = "github.com/xi2/xz"
-  packages = ["."]
-  revision = "48954b6210f8d154cb5f8484d3a3e1f83489309e"
 
 [[projects]]
   branch = "master"
@@ -213,6 +156,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "1c2a23e8099799293b620dafd6c1637fc47d902e798e073b5f5e5a44736fcc2e"
+  inputs-digest = "8612c7ad57fc92cd47e568c8140def511dea1975e5702cf8061fae2d876be268"
   solver-name = "gps-cdcl"
   solver-version = 1

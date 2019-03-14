@@ -11,7 +11,7 @@ import (
 )
 
 func Test_SqlServer_Container(t *testing.T) {
-	container, port := easycontainers.NewSqlServer("Test_SqlServer_Container")
+	container, port := easycontainers.NewSQLServer("Test_SqlServer_Container")
 
 	// this tests that data is loading properly from Path and Query
 	// - Path is loading the authors

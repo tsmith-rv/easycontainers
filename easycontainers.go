@@ -1,6 +1,8 @@
 package easycontainers
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
 	"errors"
 	"math/rand"
@@ -14,6 +16,9 @@ import (
 	"net"
 	"path/filepath"
 	"sync"
+
+	"bytes"
+	"io"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/filters"
@@ -142,23 +147,82 @@ func WaitForCleanup() error {
 	return nil
 }
 
+// Tar takes a source and variable writers and walks 'source' writing each file
+// found to the tar writer; the purpose for accepting multiple writers is to allow
+// for multiple outputs (for example a file, or md5 hash)
+//
+// Adapted from https://gist.githubusercontent.com/sdomino/e6bc0c98f87843bc26bb/raw/76e09bb99fc8ff3e9b8c1630008d4829d6b46320/targz.go
+func Tar(src string, dest io.Writer) error {
+	f, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	gzw := gzip.NewWriter(dest)
+	defer gzw.Close()
+
+	tw := tar.NewWriter(gzw)
+	defer tw.Close()
+
+	fi, err := f.Stat()
+	if err != nil {
+		return err
+	}
+
+	// create a new dir/file header
+	header, err := tar.FileInfoHeader(fi, fi.Name())
+	if err != nil {
+		return err
+	}
+
+	// write the header
+	if err := tw.WriteHeader(header); err != nil {
+		return err
+	}
+
+	// copy file data into tar writer
+	if _, err := io.Copy(tw, f); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func dockerExec(ctx context.Context, client *client.Client, containerID string, cmd []string) error {
 	e, err := client.ContainerExecCreate(ctx, containerID, types.ExecConfig{
-		Detach:       false,
+		Detach:       true,
+		Tty:          false,
 		AttachStderr: true,
-		AttachStdout: true,
 		Cmd:          cmd,
 	})
 	if err != nil {
 		return err
 	}
 
-	err = client.ContainerExecStart(ctx, e.ID, types.ExecStartCheck{
-		Detach: false,
-		Tty:    false,
+	attach, err := client.ContainerExecAttach(ctx, e.ID, types.ExecConfig{
+		AttachStderr: true,
+		Detach:       false,
+		Tty:          false,
 	})
 	if err != nil {
 		return err
+	}
+	defer attach.Close()
+
+	b := bytes.Buffer{}
+	_, err = io.Copy(&b, attach.Reader)
+	if err != nil {
+		return err
+	}
+
+	inspect, err := client.ContainerExecInspect(ctx, e.ID)
+	if err != nil {
+		return err
+	}
+
+	if inspect.ExitCode != 0 {
+		return errors.New(b.String())
 	}
 
 	return nil
