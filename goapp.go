@@ -195,16 +195,43 @@ func (g *GoApp) Container(f func() error) error {
 		return err
 	}
 
+	fmt.Println("building go app...")
+
 	// build the go app inside the container
 	err = dockerExec(ctx, g.Client, resp.ID, []string{"go", "build", path.Join(g.AppDir, g.BuildDir)})
 	if err != nil {
 		return err
 	}
 
+	fmt.Println("starting go app...")
+
 	// run the go app inside the container
 	err = dockerExec(ctx, g.Client, resp.ID, []string{"./" + path.Base(g.BuildDir)})
 	if err != nil {
 		return err
+	}
+
+	fmt.Println("go app is running.")
+
+	timeout := time.NewTimer(1 * time.Minute)
+
+	select {
+	case <-waitUntilHealthy:
+		// do nothing
+	case <-timeout.C:
+		inspect, err := g.Client.ContainerInspect(ctx, resp.ID)
+		if err != nil {
+			panic(err)
+		}
+
+		numOfLogs := len(inspect.State.Health.Log)
+		lastHealthLog := ""
+
+		if numOfLogs > 0 {
+			lastHealthLog = inspect.State.Health.Log[numOfLogs-1].Output
+		}
+
+		return fmt.Errorf("timed out waiting for container to be healthy, the last healtcheck error was: %s", lastHealthLog)
 	}
 
 	fmt.Println("successfully created goapp container")
