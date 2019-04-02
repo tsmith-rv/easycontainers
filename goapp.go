@@ -108,6 +108,9 @@ func (g *GoApp) Container(f func() error) error {
 			Image: "golang:alpine",
 			Env:   append(env, fmt.Sprintf("GOPATH=%s", GoPath())),
 			Tty:   true,
+			ExposedPorts: nat.PortSet{
+				nat.Port(fmt.Sprintf("%d/tcp", g.Port)): struct{}{},
+			},
 			Healthcheck: &container.HealthConfig{
 				Test:     []string{"CMD-SHELL", healthCommand},
 				Interval: 5 * time.Second,
