@@ -166,9 +166,7 @@ func Tar(src string, writers ...io.Writer) error {
 	tw := tar.NewWriter(gzw)
 	defer tw.Close()
 
-	// walk path
 	return filepath.Walk(src, func(file string, fi os.FileInfo, err error) error {
-
 		// return on any error
 		if err != nil {
 			return err
@@ -180,8 +178,11 @@ func Tar(src string, writers ...io.Writer) error {
 			return err
 		}
 
-		// update the name to correctly reflect the desired destination when untaring
-		header.Name = strings.TrimPrefix(strings.Replace(file, src, "", -1), string(filepath.Separator))
+		headerName := strings.TrimPrefix(strings.Replace(file, src, "", -1), string(filepath.Separator))
+
+		if headerName != "" {
+			header.Name = headerName
+		}
 
 		// write the header
 		if err := tw.WriteHeader(header); err != nil {

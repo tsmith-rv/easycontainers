@@ -206,7 +206,7 @@ func (m *MySQL) Container(f func() error) error {
 			return err
 		}
 
-		err = m.Client.CopyToContainer(ctx, resp.ID, "/docker-entrypoint-initdb.d", &tarContent, types.CopyToContainerOptions{})
+		err = m.Client.CopyToContainer(ctx, resp.ID, "/docker-entrypoint-initdb.d/", &tarContent, types.CopyToContainerOptions{})
 		if err != nil {
 			return err
 		}
