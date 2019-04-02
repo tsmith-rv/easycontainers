@@ -195,6 +195,18 @@ func (g *GoApp) Container(f func() error) error {
 		return err
 	}
 
+	fmt.Println("adding curl...")
+
+	err = dockerExec(ctx, g.Client, resp.ID, []string{"apk", "update"})
+	if err != nil {
+		return err
+	}
+
+	err = dockerExec(ctx, g.Client, resp.ID, []string{"apk", "add", "curl"})
+	if err != nil {
+		return err
+	}
+
 	fmt.Println("building go app...")
 
 	// build the go app inside the container
