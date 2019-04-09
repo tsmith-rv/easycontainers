@@ -220,19 +220,22 @@ func (g *GoApp) Container(f func() error) error {
 
 	fmt.Println("starting go app...")
 
-	// run the go app inside the container
-	err = dockerExec(ctx, g.Client, resp.ID, []string{"./" + path.Base(g.BuildDir)})
-	if err != nil {
-		return err
-	}
-
-	fmt.Println("go app is running.")
+	runErr := make(chan error)
+	go func() {
+		// run the go app inside the container
+		err = dockerExec(ctx, g.Client, resp.ID, []string{"./" + path.Base(g.BuildDir)})
+		if err != nil {
+			runErr <- err
+		}
+	}()
 
 	timeout := time.NewTimer(1 * time.Minute)
 
 	select {
 	case <-waitUntilHealthy:
 		// do nothing
+	case err := <-runErr:
+		return fmt.Errorf("the was an error while running the app and waiting for the container to be healthy: %s", err)
 	case <-timeout.C:
 		inspect, err := g.Client.ContainerInspect(ctx, resp.ID)
 		if err != nil {
