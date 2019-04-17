@@ -1,6 +1,7 @@
 package easycontainers
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -83,7 +84,7 @@ func (m *MySQL) Container(f func() error) error {
 		return err
 	}
 
-	stopHealthCheck := make(chan struct{})
+	removingContainer := make(chan struct{}, 1)
 
 	resp, err := m.Client.ContainerCreate(
 		ctx,
@@ -113,7 +114,7 @@ func (m *MySQL) Container(f func() error) error {
 		return err
 	}
 	defer func() {
-		stopHealthCheck <- struct{}{}
+		removingContainer <- struct{}{}
 
 		m.Client.ContainerStop(ctx, resp.ID, durationPointer(30*time.Second))
 		m.Client.ContainerRemove(ctx, resp.ID, types.ContainerRemoveOptions{
@@ -127,6 +128,7 @@ func (m *MySQL) Container(f func() error) error {
 	}
 
 	waitUntilHealthy := make(chan struct{})
+	containerDied := make(chan struct{})
 
 	go func() {
 		prevState := ""
@@ -134,7 +136,7 @@ func (m *MySQL) Container(f func() error) error {
 
 		for range interval.C {
 			select {
-			case <-stopHealthCheck:
+			case <-removingContainer:
 				return
 			default:
 			}
@@ -142,6 +144,13 @@ func (m *MySQL) Container(f func() error) error {
 			inspect, err := m.Client.ContainerInspect(ctx, resp.ID)
 			if err != nil {
 				panic(err)
+			}
+
+			// container died, quit healthchecking and bail
+			if !inspect.State.Running && !inspect.State.Restarting {
+				containerDied <- struct{}{}
+
+				return
 			}
 
 			if prevState != inspect.State.Health.Status {
@@ -214,6 +223,8 @@ func (m *MySQL) Container(f func() error) error {
 		timeout := time.NewTimer(1 * time.Minute)
 
 		select {
+		case <-containerDied:
+			return errors.New("the container abruptly stopped running")
 		case <-waitUntilHealthy:
 			// for some reason, even after it seems healthy, it seems to need a few extra seconds
 			// to actually be usable from the code, otherwise we get the error

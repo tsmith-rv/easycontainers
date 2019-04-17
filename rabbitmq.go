@@ -2,6 +2,7 @@ package easycontainers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -112,7 +113,7 @@ func (r *RabbitMQ) Container(f func() error) error {
 		return err
 	}
 
-	stopHealthCheck := make(chan struct{})
+	removingContainer := make(chan struct{}, 1)
 
 	resp, err := r.Client.ContainerCreate(
 		ctx,
@@ -141,7 +142,7 @@ func (r *RabbitMQ) Container(f func() error) error {
 		return err
 	}
 	defer func() {
-		stopHealthCheck <- struct{}{}
+		removingContainer <- struct{}{}
 
 		r.Client.ContainerStop(ctx, resp.ID, durationPointer(30*time.Second))
 		r.Client.ContainerRemove(ctx, resp.ID, types.ContainerRemoveOptions{
@@ -155,6 +156,7 @@ func (r *RabbitMQ) Container(f func() error) error {
 	}
 
 	waitUntilHealthy := make(chan struct{})
+	containerDied := make(chan struct{})
 
 	go func() {
 		prevState := ""
@@ -162,7 +164,7 @@ func (r *RabbitMQ) Container(f func() error) error {
 
 		for range interval.C {
 			select {
-			case <-stopHealthCheck:
+			case <-removingContainer:
 				return
 			default:
 			}
@@ -170,6 +172,13 @@ func (r *RabbitMQ) Container(f func() error) error {
 			inspect, err := r.Client.ContainerInspect(ctx, resp.ID)
 			if err != nil {
 				panic(err)
+			}
+
+			// container died, quit healthchecking and bail
+			if !inspect.State.Running && !inspect.State.Restarting {
+				containerDied <- struct{}{}
+
+				return
 			}
 
 			if prevState != inspect.State.Health.Status {
@@ -190,6 +199,8 @@ func (r *RabbitMQ) Container(f func() error) error {
 	timeout := time.NewTimer(1 * time.Minute)
 
 	select {
+	case <-containerDied:
+		return errors.New("the container abruptly stopped running")
 	case <-waitUntilHealthy:
 		// do nothing
 	case <-timeout.C:
