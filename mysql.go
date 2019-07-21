@@ -1,15 +1,25 @@
 package easycontainers
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
-	"os/exec"
+
+	"context"
+
+	"strconv"
+
+	"bytes"
 	"path"
+
 	"time"
+
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/client"
+	"github.com/docker/go-connections/nat"
 )
 
 // MySQL is a container using the official mysql docker image.
@@ -19,6 +29,7 @@ import (
 //
 // Query is a string of SQL. If set, it will run the sql when initializing the container.
 type MySQL struct {
+	Client        *client.Client
 	ContainerName string
 	Port          int
 	Path          string
@@ -32,7 +43,13 @@ func NewMySQL(name string) (r *MySQL, port int) {
 		panic(err)
 	}
 
+	c, err := client.NewEnvClient()
+	if err != nil {
+		panic(err)
+	}
+
 	return &MySQL{
+		Client:        c,
 		ContainerName: prefix + "mysql-" + name,
 		Port:          port,
 	}, port
@@ -40,7 +57,13 @@ func NewMySQL(name string) (r *MySQL, port int) {
 
 // NewMySQLWithPort returns a new instance of MySQL using the specified port.
 func NewMySQLWithPort(name string, port int) *MySQL {
+	c, err := client.NewEnvClient()
+	if err != nil {
+		panic(err)
+	}
+
 	return &MySQL{
+		Client:        c,
 		ContainerName: prefix + "mysql-" + name,
 		Port:          port,
 	}
@@ -49,25 +72,101 @@ func NewMySQLWithPort(name string, port int) *MySQL {
 // Container spins up the mysql container and runs. When the method exits, the
 // container is stopped and removed.
 func (m *MySQL) Container(f func() error) error {
-	CleanupContainer(m.ContainerName) // catch containers that previous cleanup missed
-	defer CleanupContainer(m.ContainerName)
+	ctx := context.Background()
+	reader, err := m.Client.ImagePull(ctx, "docker.io/library/mysql:latest", types.ImagePullOptions{})
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
 
-	var cmdList []*exec.Cmd
+	_, err = io.Copy(os.Stdout, reader)
+	if err != nil {
+		return err
+	}
 
-	runContainerCmd := exec.Command(
-		"docker",
-		"run",
-		"--rm",
-		"-p",
-		fmt.Sprintf("%d:3306", m.Port),
-		"--name",
+	removingContainer := make(chan struct{}, 1)
+
+	resp, err := m.Client.ContainerCreate(
+		ctx,
+		&container.Config{
+			Image: "mysql:latest",
+			Env:   []string{"MYSQL_ROOT_PASSWORD=pass"},
+			Healthcheck: &container.HealthConfig{
+				Test:     []string{"CMD-SHELL", "mysql -uroot -ppass -e 'SELECT \"startup SQL initialized\" FROM mysql.z_z_'"},
+				Interval: 5 * time.Second,
+				Timeout:  1 * time.Minute,
+			},
+		},
+		&container.HostConfig{
+			PortBindings: nat.PortMap{
+				"3306/tcp": []nat.PortBinding{
+					{
+						HostIP:   "0.0.0.0",
+						HostPort: strconv.Itoa(m.Port),
+					},
+				},
+			},
+		},
+		nil,
 		m.ContainerName,
-		"-e",
-		"MYSQL_ROOT_PASSWORD=pass",
-		"-d",
-		"mysql:latest",
 	)
-	cmdList = append(cmdList, runContainerCmd)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		removingContainer <- struct{}{}
+
+		m.Client.ContainerStop(ctx, resp.ID, durationPointer(30*time.Second))
+		m.Client.ContainerRemove(ctx, resp.ID, types.ContainerRemoveOptions{
+			Force: true,
+		})
+	}()
+
+	err = m.Client.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{})
+	if err != nil {
+		return err
+	}
+
+	waitUntilHealthy := make(chan struct{})
+	containerDied := make(chan struct{})
+
+	go func() {
+		prevState := ""
+		interval := time.NewTicker(1 * time.Second)
+
+		for range interval.C {
+			select {
+			case <-removingContainer:
+				return
+			default:
+			}
+
+			inspect, err := m.Client.ContainerInspect(ctx, resp.ID)
+			if err != nil {
+				panic(err)
+			}
+
+			// container died, quit healthchecking and bail
+			if !inspect.State.Running && !inspect.State.Restarting {
+				containerDied <- struct{}{}
+
+				return
+			}
+
+			if prevState != inspect.State.Health.Status {
+				fmt.Println("STATUS CHANGE:", inspect.State.Health.Status)
+				prevState = inspect.State.Health.Status
+
+				if inspect.State.Health.Status == "healthy" {
+					for _, l := range inspect.State.Health.Log {
+						fmt.Println(l.Output)
+					}
+
+					waitUntilHealthy <- struct{}{}
+				}
+			}
+		}
+	}()
 
 	var sql string
 
@@ -109,36 +208,43 @@ func (m *MySQL) Container(f func() error) error {
 
 		file.Close()
 
-		addStartupSQLFileCmd := exec.Command(
-			"/bin/bash",
-			"-c",
-			fmt.Sprintf(
-				`docker cp %s $(docker ps --filter="name=^/%s$" --format="{{.ID}}"):/docker-entrypoint-initdb.d`,
-				file.Name(),
-				m.ContainerName,
-			),
-		)
-		cmdList = append(cmdList, addStartupSQLFileCmd)
-	}
+		tarContent := bytes.Buffer{}
 
-	waitForInitializeCmd := strCmdForContainer(
-		m.ContainerName,
-		"until (mysql -uroot -ppass -e 'select \"initialization table found\" from mysql.z_z_ limit 1') do echo 'waiting for mysql to be up'; sleep 1; done; sleep 3;",
-	)
-	cmdList = append(cmdList, waitForInitializeCmd)
-
-	for _, c := range cmdList {
-		err := RunCommandWithTimeout(c, 1*time.Minute)
+		err = Tar(file.Name(), &tarContent)
 		if err != nil {
-			// I'm showing the logs for this container specifically because if there is
-			// a sql error on startup, it won't return from stderr, it will only show
-			// up in the logs
-			logs := Logs(m.ContainerName)
-			if logs != "" {
-				err = errors.New(fmt.Sprintln(err, "", " -- CONTAINER LOGS -- ", "", logs))
+			return err
+		}
+
+		err = m.Client.CopyToContainer(ctx, resp.ID, "/docker-entrypoint-initdb.d/", &tarContent, types.CopyToContainerOptions{})
+		if err != nil {
+			return err
+		}
+
+		timeout := time.NewTimer(1 * time.Minute)
+
+		select {
+		case <-containerDied:
+			return errors.New("the container abruptly stopped running")
+		case <-waitUntilHealthy:
+			// for some reason, even after it seems healthy, it seems to need a few extra seconds
+			// to actually be usable from the code, otherwise we get the error
+			// [mysql] packets.go:36: unexpected EOF
+			wait := time.NewTimer(3 * time.Second)
+			<-wait.C
+		case <-timeout.C:
+			inspect, err := m.Client.ContainerInspect(ctx, resp.ID)
+			if err != nil {
+				panic(err)
 			}
 
-			return err
+			numOfLogs := len(inspect.State.Health.Log)
+			lastHealthLog := ""
+
+			if numOfLogs > 0 {
+				lastHealthLog = inspect.State.Health.Log[numOfLogs-1].Output
+			}
+
+			return fmt.Errorf("timed out waiting for container to be healthy, the last healtcheck error was: %s", lastHealthLog)
 		}
 	}
 

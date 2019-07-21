@@ -1,13 +1,25 @@
 package easycontainers
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
-	"os/exec"
+	"io"
+	"os"
 	"path"
 	"strings"
 	"sync"
+
+	"encoding/json"
+
 	"time"
+
+	"bytes"
+
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/mount"
+	"github.com/docker/docker/client"
+	"github.com/docker/go-connections/nat"
 )
 
 const (
@@ -74,7 +86,8 @@ var initializations = map[string]string{
 
 // SQSQueue is a queue in SQS in Localstack (who knew?)
 type SQSQueue struct {
-	Name string
+	Name      string
+	container *containerInfo
 }
 
 // LambdaFunction is a lambda function in localstack (who knew?)
@@ -83,6 +96,7 @@ type LambdaFunction struct {
 	Handler      string
 	Zip          string
 	Payloads     []string
+	container    *containerInfo
 }
 
 // Localstack is the container for localstack/localstack.
@@ -98,14 +112,26 @@ type Localstack struct {
 	Queues        []SQSQueue
 	Functions     []LambdaFunction
 	Services      []string
-	PortBindings  map[string]string
+	PortBindings  map[string]int
 	Environment   map[string]string
+	container     *containerInfo
 }
 
 // NewLocalstack returns a new instance of Localstack and the port it will be using.
 func NewLocalstack(name string, services ...string) (r *Localstack, portMap map[string]int) {
+	// if no services are specified, startup all services
+	if len(services) == 0 {
+		for service := range ports {
+			services = append(services, service)
+		}
+	}
+
+	c, err := client.NewEnvClient()
+	if err != nil {
+		panic(err)
+	}
+
 	portMap = make(map[string]int)
-	portBindings := make(map[string]string)
 
 	for _, s := range services {
 		port, err := getFreePort()
@@ -114,28 +140,39 @@ func NewLocalstack(name string, services ...string) (r *Localstack, portMap map[
 		}
 
 		portMap[s] = port
-		portBindings[s] = fmt.Sprintf("%d:%d", port, ports[s])
 	}
 
 	return &Localstack{
 		ContainerName: prefix + "localstack-" + name,
-		PortBindings:  portBindings,
+		PortBindings:  portMap,
 		Services:      services,
+		container: &containerInfo{
+			Client: c,
+		},
 	}, portMap
 }
 
 // NewLocalstackWithPortMap returns a new instance of localstack using the specified ports for services
 func NewLocalstackWithPortMap(name string, portMap map[string]int, services ...string) *Localstack {
-	portBindings := make(map[string]string)
+	// if no services are specified, startup all services
+	if len(services) == 0 {
+		for service := range ports {
+			services = append(services, service)
+		}
+	}
 
-	for _, s := range services {
-		portBindings[s] = fmt.Sprintf("%d:%d", portMap[s], ports[s])
+	c, err := client.NewEnvClient()
+	if err != nil {
+		panic(err)
 	}
 
 	return &Localstack{
 		ContainerName: prefix + "localstack-" + name,
-		PortBindings:  portBindings,
+		PortBindings:  portMap,
 		Services:      services,
+		container: &containerInfo{
+			Client: c,
+		},
 	}
 }
 
@@ -144,39 +181,37 @@ func NewLocalstackWithPortMap(name string, portMap map[string]int, services ...s
 // The json is used as a token in the command line, and doesn't work right with
 // single quotes and stuff (for now), so please, don't use single quotes or special
 // bash characters, OR YOU'RE GONNA HAVE A BAD TIME.
-func (l *LambdaFunction) SendPayload(container string, payload map[string]interface{}) error {
+func (l *LambdaFunction) SendPayload(payload map[string]interface{}) error {
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
 
-	str := "'" + string(payloadJSON) + "'"
-
-	sendMsgCmd := cmdForContainer(
-		container,
-		exec.Command(
-			"/root/.local/bin/aws",
+	return dockerExec(
+		l.container.Ctx,
+		l.container.Client,
+		l.container.ContainerID,
+		[]string{
+			"aws",
 			"--endpoint-url",
 			"http://localhost:4574",
-			"lambda",
-			"invoke",
 			"--region",
 			"us-east-1",
+			"lambda",
+			"invoke",
 			"--function-name",
 			l.FunctionName,
 			"output.out",
 			"--payload",
-			str,
-		),
+			string(payloadJSON),
+		},
 	)
-
-	return RunCommandWithTimeout(sendMsgCmd, 1*time.Minute)
 }
 
 // CreateCommand returns a command for creating the lambda from the command line.
-func (l *LambdaFunction) CreateCommand() *exec.Cmd {
-	return exec.Command(
-		"/root/.local/bin/aws",
+func (l *LambdaFunction) CreateCommand() []string {
+	return []string{
+		"aws",
 		"--endpoint-url",
 		"http://localhost:4574",
 		"lambda",
@@ -194,14 +229,14 @@ func (l *LambdaFunction) CreateCommand() *exec.Cmd {
 		"--runtime",
 		"go1.x",
 		"--zip-file",
-		"fileb:///"+path.Base(l.Zip),
-	)
+		"fileb:///" + path.Base(l.Zip),
+	}
 }
 
 // CreateCommand returns a command for creating the queue from the command line.
-func (q *SQSQueue) CreateCommand() *exec.Cmd {
-	return exec.Command(
-		"/root/.local/bin/aws",
+func (q *SQSQueue) CreateCommand() []string {
+	return []string{
+		"aws",
 		"--endpoint-url",
 		"http://localhost:4576",
 		"sqs",
@@ -210,15 +245,17 @@ func (q *SQSQueue) CreateCommand() *exec.Cmd {
 		q.Name,
 		"--region",
 		"us-east-1",
-	)
+	}
 }
 
 // SendMessage sends the specified message to the queue in the container
-func (l *SQSQueue) SendMessage(container string, msg string) error {
-	sendMsgCmd := cmdForContainer(
-		container,
-		exec.Command(
-			"/root/.local/bin/aws",
+func (q *SQSQueue) SendMessage(msg string) error {
+	return dockerExec(
+		q.container.Ctx,
+		q.container.Client,
+		q.container.ContainerID,
+		[]string{
+			"aws",
 			"--region",
 			"us-east-1",
 			"--endpoint-url",
@@ -226,19 +263,18 @@ func (l *SQSQueue) SendMessage(container string, msg string) error {
 			"sqs",
 			"send-message",
 			"--queue-url",
-			fmt.Sprintf("http://localhost:4576/queue/%s", l.Name),
+			fmt.Sprintf("http://localhost:4576/queue/%s", q.Name),
 			"--message-body",
 			fmt.Sprintf(`"%s"`, msg),
-		),
+		},
 	)
-
-	return RunCommandWithTimeout(sendMsgCmd, 1*time.Minute)
 }
 
 // AddQueue adds a queue and it's messages to be created when the container starts up.
 func (l *Localstack) AddQueue(name string) *Localstack {
 	l.Queues = append(l.Queues, SQSQueue{
-		Name: name,
+		Name:      name,
+		container: l.container,
 	})
 
 	return l
@@ -250,6 +286,7 @@ func (l *Localstack) AddFunction(functionName, handler, zip string) *Localstack 
 		FunctionName: functionName,
 		Handler:      handler,
 		Zip:          zip,
+		container:    l.container,
 	})
 
 	return l
@@ -258,65 +295,94 @@ func (l *Localstack) AddFunction(functionName, handler, zip string) *Localstack 
 // Container spins up the localstack container and runs. When the method exits, the
 // container is stopped and removed.
 func (l *Localstack) Container(f func() error) error {
-	CleanupContainer(l.ContainerName) // catch containers that previous cleanup missed
-	defer CleanupContainer(l.ContainerName)
+	dockerClient := l.container.Client
 
-	var runArgs []string
-	{
-		runArgs = []string{
-			"run",
-			"--rm",
-			"--name",
-			l.ContainerName,
-			"-d",
-		}
+	ctx := context.Background()
+	l.container.Ctx = ctx
 
-		// if Functions is being run, mount the unix socket or Functions's won't run
-		for _, s := range l.Services {
-			if s == ServiceLambda {
-				runArgs = append(runArgs, "-v", "/var/run/docker.sock:/var/run/docker.sock")
-			}
-		}
-
-		for _, binding := range l.PortBindings {
-			runArgs = append(runArgs, "-p", binding)
-		}
-
-		runArgs = append(runArgs, []string{
-			"-e",
-			fmt.Sprintf("SERVICES=%s", strings.Join(l.Services, ",")),
-			"-e",
-			"AWS_SECRET_ACCESS_KEY=guest",
-			"-e",
-			"AWS_ACCESS_KEY_ID=guest",
-			"-e",
-			"LAMBDA_EXECUTOR=docker",
-			"localstack/localstack",
-		}...)
+	reader, err := dockerClient.ImagePull(ctx, "docker.io/localstack/localstack", types.ImagePullOptions{})
+	if err != nil {
+		return err
 	}
+	defer reader.Close()
 
-	runContainerCmd := exec.Command(
-		"docker",
-		runArgs...,
-	)
-
-	err := RunCommandWithTimeout(runContainerCmd, 1*time.Minute)
+	_, err = io.Copy(os.Stdout, reader)
 	if err != nil {
 		return err
 	}
 
-	installAWSCmd := cmdForContainer(
+	dockerConfig := container.Config{
+		AttachStdout: true,
+		AttachStderr: true,
+		Image:        "localstack/localstack",
+		Env: []string{
+			fmt.Sprintf("SERVICES=%s", strings.Join(l.Services, ",")),
+			"AWS_SECRET_ACCESS_KEY=guest",
+			"AWS_ACCESS_KEY_ID=guest",
+			"LAMBDA_EXECUTOR=docker",
+		},
+	}
+
+	portMap := nat.PortMap{}
+	for service, port := range l.PortBindings {
+		p := fmt.Sprintf("%d/tcp", ports[service])
+		portMap[nat.Port(p)] = []nat.PortBinding{
+			{
+				HostIP:   "0.0.0.0",
+				HostPort: fmt.Sprintf("%d/tcp", port),
+			},
+		}
+	}
+
+	hostConfig := container.HostConfig{
+		PortBindings: portMap,
+
+		// this mount is required for Lambda's to work (don't know why)
+		Mounts: []mount.Mount{
+			{
+				Type:   mount.TypeBind,
+				Source: "/var/run/docker.sock",
+				Target: "/var/run/docker.sock",
+			},
+		},
+	}
+
+	resp, err := dockerClient.ContainerCreate(
+		ctx,
+		&dockerConfig,
+		&hostConfig,
+		nil,
 		l.ContainerName,
-		exec.Command(
+	)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		dockerClient.ContainerStop(ctx, resp.ID, durationPointer(30*time.Second))
+		dockerClient.ContainerRemove(ctx, resp.ID, types.ContainerRemoveOptions{
+			Force: true,
+		})
+	}()
+
+	l.container.ContainerID = resp.ID
+
+	err = dockerClient.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{})
+	if err != nil {
+		return err
+	}
+
+	err = dockerExec(
+		ctx,
+		dockerClient,
+		resp.ID,
+		[]string{
 			"pip",
 			"install",
 			"awscli",
 			"--upgrade",
 			"--user",
-		),
+		},
 	)
-
-	err = RunCommandWithTimeout(installAWSCmd, 1*time.Minute)
 	if err != nil {
 		return err
 	}
@@ -331,25 +397,28 @@ func (l *Localstack) Container(f func() error) error {
 
 		wg.Add(1)
 
-		go func(s string) {
+		go func() {
 			defer wg.Done()
 
-			waitForInitializeCmd := strCmdForContainer(
-				l.ContainerName,
-				fmt.Sprintf(
-					"until (/root/.local/bin/aws --region us-east-1 --endpoint-url=http://localhost:%d %s) do echo 'waiting for localstack - %s to be up'; sleep 1; done",
-					ports[s],
-					initializations[s],
-					s,
-				),
+			err := dockerExec(
+				ctx,
+				dockerClient,
+				resp.ID,
+				[]string{
+					"/bin/bash",
+					"-c",
+					fmt.Sprintf(
+						"until (aws --region us-east-1 --endpoint-url=http://localhost:%d %s) do echo 'waiting for localstack - %s to be up'; sleep 1; done",
+						ports[s],
+						initializations[s],
+						s,
+					),
+				},
 			)
-
-			err = RunCommandWithTimeout(waitForInitializeCmd, 1*time.Minute)
 			if err != nil {
 				errs <- err
-				return
 			}
-		}(s)
+		}()
 	}
 
 	wg.Wait()
@@ -361,42 +430,28 @@ func (l *Localstack) Container(f func() error) error {
 	}
 
 	for _, queue := range l.Queues {
-		createQueueCmd := cmdForContainer(
-			l.ContainerName,
-			queue.CreateCommand(),
-		)
-
-		err = RunCommandWithTimeout(createQueueCmd, 5*time.Second)
+		err = dockerExec(ctx, dockerClient, resp.ID, queue.CreateCommand())
 		if err != nil {
 			return err
 		}
 	}
 
 	for _, lambda := range l.Functions {
-		addStartupSQLFileCmd := exec.Command(
-			"/bin/bash",
-			"-c",
-			fmt.Sprintf(
-				`docker cp %s $(docker ps --filter="name=^/%s$" --format="{{.ID}}"):/`,
-				path.Join(GoPath(), lambda.Zip),
-				l.ContainerName,
-			),
-		)
+		filePath := path.Join(GoPath(), lambda.Zip)
 
-		err = RunCommandWithTimeout(addStartupSQLFileCmd, 10*time.Second)
+		tarContent := bytes.Buffer{}
+
+		err = Tar(filePath, &tarContent)
 		if err != nil {
 			return err
 		}
 
-		createLambdaCommand := cmdForContainer(
-			l.ContainerName,
-			lambda.CreateCommand(),
-		)
-
-		err = RunCommandWithTimeout(createLambdaCommand, 10*time.Second)
+		err = dockerClient.CopyToContainer(ctx, resp.ID, "/", &tarContent, types.CopyToContainerOptions{})
 		if err != nil {
 			return err
 		}
+
+		err = dockerExec(ctx, dockerClient, resp.ID, lambda.CreateCommand())
 	}
 
 	fmt.Println("successfully created localstack container")

@@ -1,9 +1,19 @@
 package easycontainers
 
 import (
+	"context"
+	"errors"
 	"fmt"
-	"os/exec"
+	"strconv"
 	"time"
+
+	"io"
+	"os"
+
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/client"
+	"github.com/docker/go-connections/nat"
 )
 
 const (
@@ -16,6 +26,7 @@ const (
 // RabbitMQ is a container using the official RabbitMQ:management docker image, which already
 // has rabbitmqadmin installed on startup.
 type RabbitMQ struct {
+	Client        *client.Client
 	ContainerName string
 	Port          int
 	Vhosts        []Vhost
@@ -58,92 +69,179 @@ func NewRabbitMQ(name string) (r *RabbitMQ, port int) {
 		panic(err)
 	}
 
+	c, err := client.NewEnvClient()
+	if err != nil {
+		panic(err)
+	}
+
 	return &RabbitMQ{
 		ContainerName: prefix + "rabbit-" + name,
 		Port:          port,
+		Client:        c,
 	}, port
 }
 
 // NewRabbitMQWithPort returns a new instance of RabbitMQ using the specified port.
 func NewRabbitMQWithPort(name string, port int) *RabbitMQ {
+	c, err := client.NewEnvClient()
+	if err != nil {
+		panic(err)
+	}
+
 	return &RabbitMQ{
 		ContainerName: prefix + "rabbit-" + name,
 		Port:          port,
+		Client:        c,
 	}
 }
 
-// Container spins up the mysql container and runs. When the method exits, the
+// Container spins up the rabbitmq container and runs. When the method exits, the
 // container is stopped and removed.
 //
 // The RabbitMQ components will be created in the following order:
 // Vhosts -> Exchanges -> Queues -> Bindings
 func (r *RabbitMQ) Container(f func() error) error {
-	CleanupContainer(r.ContainerName)
-	defer CleanupContainer(r.ContainerName)
+	ctx := context.Background()
+	reader, err := r.Client.ImagePull(ctx, "docker.io/library/rabbitmq:management-alpine", types.ImagePullOptions{})
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
 
-	var cmdList []*exec.Cmd
+	_, err = io.Copy(os.Stdout, reader)
+	if err != nil {
+		return err
+	}
 
-	runContainerCmd := exec.Command(
-		"docker",
-		"run",
-		"--rm",
-		"-p",
-		fmt.Sprintf("%d:5672", r.Port),
-		"--name",
+	removingContainer := make(chan struct{}, 1)
+
+	resp, err := r.Client.ContainerCreate(
+		ctx,
+		&container.Config{
+			Image: "rabbitmq:management-alpine",
+			Healthcheck: &container.HealthConfig{
+				Test:     []string{"CMD-SHELL", "until $(rabbitmqadmin -q list queues); do echo 'waiting for RabbitMQ container to be up'; sleep 1; done"},
+				Interval: 5 * time.Second,
+				Timeout:  1 * time.Minute,
+			},
+		},
+		&container.HostConfig{
+			PortBindings: nat.PortMap{
+				"5672/tcp": []nat.PortBinding{
+					{
+						HostIP:   "0.0.0.0",
+						HostPort: strconv.Itoa(r.Port),
+					},
+				},
+			},
+		},
+		nil,
 		r.ContainerName,
-		"-d",
-		"rabbitmq:management-alpine",
 	)
-	cmdList = append(cmdList, runContainerCmd)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		removingContainer <- struct{}{}
 
-	waitForInitializeCmd := strCmdForContainer(
-		r.ContainerName,
-		"until $(rabbitmqadmin -q list queues); do echo 'waiting for RabbitMQ container to be up'; sleep 1; done",
-	)
-	cmdList = append(cmdList, waitForInitializeCmd)
+		r.Client.ContainerStop(ctx, resp.ID, durationPointer(30*time.Second))
+		r.Client.ContainerRemove(ctx, resp.ID, types.ContainerRemoveOptions{
+			Force: true,
+		})
+	}()
+
+	err = r.Client.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{})
+	if err != nil {
+		return err
+	}
+
+	waitUntilHealthy := make(chan struct{})
+	containerDied := make(chan struct{})
+
+	go func() {
+		prevState := ""
+		interval := time.NewTicker(1 * time.Second)
+
+		for range interval.C {
+			select {
+			case <-removingContainer:
+				return
+			default:
+			}
+
+			inspect, err := r.Client.ContainerInspect(ctx, resp.ID)
+			if err != nil {
+				panic(err)
+			}
+
+			// container died, quit healthchecking and bail
+			if !inspect.State.Running && !inspect.State.Restarting {
+				containerDied <- struct{}{}
+
+				return
+			}
+
+			if prevState != inspect.State.Health.Status {
+				fmt.Println("STATUS CHANGE:", inspect.State.Health.Status)
+				prevState = inspect.State.Health.Status
+
+				if inspect.State.Health.Status == "healthy" {
+					for _, l := range inspect.State.Health.Log {
+						fmt.Println(l.Output)
+					}
+
+					waitUntilHealthy <- struct{}{}
+				}
+			}
+		}
+	}()
+
+	timeout := time.NewTimer(1 * time.Minute)
+
+	select {
+	case <-containerDied:
+		return errors.New("the container abruptly stopped running")
+	case <-waitUntilHealthy:
+		// do nothing
+	case <-timeout.C:
+		inspect, err := r.Client.ContainerInspect(ctx, resp.ID)
+		if err != nil {
+			panic(err)
+		}
+
+		numOfLogs := len(inspect.State.Health.Log)
+		lastHealthLog := ""
+
+		if numOfLogs > 0 {
+			lastHealthLog = inspect.State.Health.Log[numOfLogs-1].Output
+		}
+
+		return fmt.Errorf("timed out waiting for container to be healthy, the last healtcheck error was: %s", lastHealthLog)
+	}
 
 	for _, x := range r.Vhosts {
-		cmdList = append(
-			cmdList,
-			cmdForContainer(
-				r.ContainerName,
-				x.CreateCommand(),
-			),
-		)
+		err = dockerExec(ctx, r.Client, resp.ID, x.CreateCommand())
+		if err != nil {
+			return err
+		}
 	}
 
 	for _, x := range r.Exchanges {
-		cmdList = append(
-			cmdList,
-			cmdForContainer(
-				r.ContainerName,
-				x.CreateCommand(),
-			),
-		)
+		err = dockerExec(ctx, r.Client, resp.ID, x.CreateCommand())
+		if err != nil {
+			return err
+		}
 	}
 
 	for _, x := range r.Queues {
-		cmdList = append(
-			cmdList,
-			cmdForContainer(
-				r.ContainerName,
-				x.CreateCommand(),
-			),
-		)
+		err = dockerExec(ctx, r.Client, resp.ID, x.CreateCommand())
+		if err != nil {
+			return err
+		}
 	}
 
 	for _, x := range r.Bindings {
-		cmdList = append(
-			cmdList,
-			cmdForContainer(
-				r.ContainerName,
-				x.CreateCommand(),
-			),
-		)
-	}
-
-	for _, c := range cmdList {
-		err := RunCommandWithTimeout(c, 1*time.Minute)
+		err = dockerExec(ctx, r.Client, resp.ID, x.CreateCommand())
 		if err != nil {
 			return err
 		}
@@ -191,18 +289,18 @@ func (r *RabbitMQ) AddBinding(b ...QueueBinding) *RabbitMQ {
 }
 
 // CreateCommand returns a command for creating the Vhost from the command line.
-func (v *Vhost) CreateCommand() *exec.Cmd {
-	return exec.Command(
+func (v *Vhost) CreateCommand() []string {
+	return []string{
 		rabbitmqadmin,
 		"declare",
 		"vhost",
 		fmt.Sprintf("name=%s", v.Name),
-	)
+	}
 }
 
 // CreateCommand returns a command for creating the Exchange from the command line.
-func (e *Exchange) CreateCommand() *exec.Cmd {
-	var args []string
+func (e *Exchange) CreateCommand() []string {
+	args := []string{rabbitmqadmin}
 
 	if e.Vhost != nil {
 		args = append(
@@ -220,15 +318,12 @@ func (e *Exchange) CreateCommand() *exec.Cmd {
 		fmt.Sprintf("type=%s", e.Type),
 	)
 
-	return exec.Command(
-		rabbitmqadmin,
-		args...,
-	)
+	return args
 }
 
 // CreateCommand returns a command for creating the Queue from the command line.
-func (q *Queue) CreateCommand() *exec.Cmd {
-	var args []string
+func (q *Queue) CreateCommand() []string {
+	args := []string{rabbitmqadmin}
 
 	if q.Vhost != nil {
 		args = append(
@@ -248,15 +343,12 @@ func (q *Queue) CreateCommand() *exec.Cmd {
 		}...,
 	)
 
-	return exec.Command(
-		rabbitmqadmin,
-		args...,
-	)
+	return args
 }
 
 // CreateCommand returns a command for creating the Binding from the command line.
-func (q *QueueBinding) CreateCommand() *exec.Cmd {
-	var args []string
+func (q *QueueBinding) CreateCommand() []string {
+	args := []string{rabbitmqadmin}
 
 	if q.Vhost != nil {
 		args = append(
@@ -278,8 +370,5 @@ func (q *QueueBinding) CreateCommand() *exec.Cmd {
 		}...,
 	)
 
-	return exec.Command(
-		rabbitmqadmin,
-		args...,
-	)
+	return args
 }

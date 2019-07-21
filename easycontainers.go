@@ -1,10 +1,11 @@
 package easycontainers
 
 import (
-	"bytes"
+	"archive/tar"
+	"compress/gzip"
+	"context"
 	"errors"
 	"math/rand"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -13,10 +14,15 @@ import (
 
 	"go/build"
 	"net"
-	"os/signal"
 	"path/filepath"
 	"sync"
-	"syscall"
+
+	"bytes"
+	"io"
+
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/client"
 )
 
 const prefix = "easycontainers-"
@@ -26,16 +32,28 @@ var (
 	allocatedPorts  = map[int]struct{}{}
 )
 
+type containerInfo struct {
+	Ctx         context.Context
+	Client      *client.Client
+	ContainerID string
+}
+
 func init() {
 	// we random numbers for port generation
 	rand.Seed(time.Now().UTC().UnixNano())
 
 	// cleanup any oustanding containers with the easycontainers prefix
-	CleanupAllContainers()
+	err := CleanupAllContainers()
+	if err != nil {
+		panic(err)
+	}
 
-	WaitForCleanup()
+	err = WaitForCleanup()
+	if err != nil {
+		panic(err)
+	}
 
-	// cleanup any outstanding sql files in temp
+	// cleanup any outstanding easycontainers files in temp
 	filepath.Walk(os.TempDir(), func(path string, info os.FileInfo, err error) error {
 		if strings.HasPrefix(info.Name(), prefix) {
 			os.Remove(path)
@@ -43,16 +61,6 @@ func init() {
 
 		return nil
 	})
-
-	// try to cleanup containers if signaled to quit
-	signalCh := make(chan os.Signal, 1024)
-	signal.Notify(signalCh, syscall.SIGINT, syscall.SIGKILL)
-
-	go func() {
-		<-signalCh
-
-		CleanupAllContainers()
-	}()
 }
 
 // GoPath returns the value stored in the GOPATH environment variable.
@@ -69,18 +77,32 @@ func GoPath() string {
 
 // CleanupAllContainers will stop all containers starting with prefix
 func CleanupAllContainers() error {
-	cmd := exec.Command(
-		"/bin/bash",
-		"-c",
-		fmt.Sprintf(`docker stop $(docker ps --filter="name=%s" --format="{{.ID}}")`, prefix),
-	)
-
-	var b bytes.Buffer
-	cmd.Stderr = &b
-
-	err := cmd.Run()
+	ctx := context.Background()
+	cli, err := client.NewEnvClient()
 	if err != nil {
-		return fmt.Errorf("error in command : %s -- %s", err, b.String())
+		panic(err)
+	}
+
+	// only grab the containers created by easycontainers
+	args := filters.NewArgs()
+	args.Add("name", prefix)
+
+	containers, err := cli.ContainerList(ctx, types.ContainerListOptions{
+		All:     true,
+		Filters: args,
+	})
+	if err != nil {
+		return err
+	}
+
+	for _, container := range containers {
+		fmt.Println("Killing and Removing Container", container.ID[:10])
+
+		if err := cli.ContainerRemove(ctx, container.ID, types.ContainerRemoveOptions{
+			Force: true,
+		}); err != nil {
+			return err
+		}
 	}
 
 	return err
@@ -89,110 +111,145 @@ func CleanupAllContainers() error {
 // WaitForCleanup checks every second if there are any easycontainers containers still
 // live, and exits when there aren't, or when the timeout occurrs -- whichever comes first
 func WaitForCleanup() error {
-	cmd := exec.Command(
-		"/bin/bash",
-		"-c",
-		fmt.Sprintf(
-			`while [ "$(docker ps --filter="name=%s" --format="{{.ID}}")" ]; do echo 'waiting for cleanup to finish'; sleep 1; done`,
-			prefix,
-		),
-	)
-
-	return RunCommandWithTimeout(cmd, 1*time.Minute)
-}
-
-// CleanupContainer stops the container with the specified name.
-func CleanupContainer(name string) error {
-	cmd := exec.Command(
-		"/bin/bash",
-		"-c",
-		fmt.Sprintf(`docker stop $(docker ps --filter="name=^/%s$" --format="{{.ID}}")`, name),
-	)
-
-	var b bytes.Buffer
-	cmd.Stderr = &b
-
-	err := cmd.Run()
+	ctx := context.Background()
+	cli, err := client.NewEnvClient()
 	if err != nil {
-		return fmt.Errorf("error in command : %s -- %s", err, b.String())
+		panic(err)
 	}
 
-	return err
-}
-
-// Logs runs the docker logs command on the specified container and returns the output
-func Logs(name string) string {
-	cmd := exec.Command(
-		"docker",
-		"logs",
-		name,
+	var (
+		interval = time.NewTicker(1 * time.Second)
+		timeout  = time.NewTimer(1 * time.Minute)
 	)
 
-	var outputBuf bytes.Buffer
-	cmd.Stderr = &outputBuf
-	cmd.Stdout = &outputBuf
+	for range interval.C {
+		select {
+		case <-timeout.C:
+			return errors.New("timed out waiting for all easycontainers containers to get removed")
+		default:
+			// only grab the containers created by easycontainers
+			args := filters.NewArgs()
+			args.Add("name", "/"+prefix)
 
-	cmd.Run()
+			containers, err := cli.ContainerList(ctx, types.ContainerListOptions{
+				Filters: args,
+			})
+			if err != nil {
+				return err
+			}
 
-	return outputBuf.String()
-}
-
-// RunCommandWithTimeout will execute the specified cmd, but will timeout and
-// return and error after 1 minute.
-func RunCommandWithTimeout(cmd *exec.Cmd, timeout time.Duration) error {
-	finish := make(chan error)
-	timer := time.NewTimer(timeout)
-
-	go func() {
-		var err error
-
-		defer func() {
-			finish <- err
-		}()
-
-		var b bytes.Buffer
-		cmd.Stderr = &b
-		cmd.Stdout = os.Stdout
-
-		err = cmd.Run()
-		if err != nil {
-			err = fmt.Errorf("error in command : %s -- %s", err, b.String())
-			return
+			if len(containers) == 0 {
+				return nil
+			}
 		}
-	}()
-
-	select {
-	case err := <-finish:
-		if err != nil {
-			return err
-		}
-	case <-timer.C:
-		return errors.New("container timed out")
 	}
 
 	return nil
 }
 
-func cmdForContainer(name string, cmd *exec.Cmd) *exec.Cmd {
-	return exec.Command(
-		"docker",
-		"exec",
-		name,
-		"/bin/bash",
-		"-c",
-		strings.Join(cmd.Args, " "),
-	)
+// Tar takes a source and variable writers and walks 'source' writing each file
+// found to the tar writer; the purpose for accepting multiple writers is to allow
+// for multiple outputs (for example a file, or md5 hash)
+//
+// Adapted from https://gist.githubusercontent.com/sdomino/e6bc0c98f87843bc26bb/raw/76e09bb99fc8ff3e9b8c1630008d4829d6b46320/targz.go
+func Tar(src string, writers ...io.Writer) error {
+	// ensure the src actually exists before trying to tar it
+	if _, err := os.Stat(src); err != nil {
+		return fmt.Errorf("Unable to tar files - %v", err.Error())
+	}
+
+	mw := io.MultiWriter(writers...)
+
+	gzw := gzip.NewWriter(mw)
+	defer gzw.Close()
+
+	tw := tar.NewWriter(gzw)
+	defer tw.Close()
+
+	return filepath.Walk(src, func(file string, fi os.FileInfo, err error) error {
+		// return on any error
+		if err != nil {
+			return err
+		}
+
+		// create a new dir/file header
+		header, err := tar.FileInfoHeader(fi, fi.Name())
+		if err != nil {
+			return err
+		}
+
+		headerName := strings.TrimPrefix(strings.Replace(file, src, "", -1), string(filepath.Separator))
+
+		if headerName != "" {
+			header.Name = headerName
+		}
+
+		// write the header
+		if err := tw.WriteHeader(header); err != nil {
+			return err
+		}
+
+		// return on non-regular files (thanks to [kumo](https://medium.com/@komuw/just-like-you-did-fbdd7df829d3) for this suggested update)
+		if !fi.Mode().IsRegular() {
+			return nil
+		}
+
+		// open files for taring
+		f, err := os.Open(file)
+		if err != nil {
+			return err
+		}
+
+		// copy file data into tar writer
+		if _, err := io.Copy(tw, f); err != nil {
+			return err
+		}
+
+		// manually close here after each file operation; defering would cause each file close
+		// to wait until all operations have completed.
+		f.Close()
+
+		return nil
+	})
 }
 
-func strCmdForContainer(name string, str string) *exec.Cmd {
-	return exec.Command(
-		"docker",
-		"exec",
-		name,
-		"/bin/bash",
-		"-c",
-		str,
-	)
+func dockerExec(ctx context.Context, client *client.Client, containerID string, cmd []string) error {
+	e, err := client.ContainerExecCreate(ctx, containerID, types.ExecConfig{
+		Detach:       true,
+		Tty:          false,
+		AttachStderr: true,
+		Cmd:          cmd,
+	})
+	if err != nil {
+		return err
+	}
+
+	attach, err := client.ContainerExecAttach(ctx, e.ID, types.ExecConfig{
+		AttachStderr: true,
+		Detach:       false,
+		Tty:          false,
+	})
+	if err != nil {
+		return err
+	}
+	defer attach.Close()
+
+	b := bytes.Buffer{}
+	_, err = io.Copy(&b, attach.Reader)
+	if err != nil {
+		return err
+	}
+
+	inspect, err := client.ContainerExecInspect(ctx, e.ID)
+	if err != nil {
+		return err
+	}
+
+	if inspect.ExitCode != 0 {
+		return errors.New(b.String())
+	}
+
+	return nil
 }
 
 func getFreePort() (int, error) {
@@ -225,4 +282,8 @@ func getFreePort() (int, error) {
 	}
 
 	return 0, errors.New("took too long to find free port")
+}
+
+func durationPointer(d time.Duration) *time.Duration {
+	return &d
 }

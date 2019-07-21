@@ -2,10 +2,79 @@
 
 
 [[projects]]
+  name = "cloud.google.com/go"
+  packages = ["civil"]
+  revision = "c9474f2f8deb81759839474b6bd1726bbfe1c1c4"
+  version = "v0.36.0"
+
+[[projects]]
+  name = "github.com/Microsoft/go-winio"
+  packages = ["."]
+  revision = "97e4973ce50b2ff5f09635a57e2b88a037aae829"
+  version = "v0.4.11"
+
+[[projects]]
   name = "github.com/davecgh/go-spew"
   packages = ["spew"]
   revision = "8991bc29aa16c548c550c7ff78260e27b9ab7c73"
   version = "v1.1.1"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/denisenkom/go-mssqldb"
+  packages = [
+    ".",
+    "internal/cp"
+  ]
+  revision = "df6d76eb92899e4dfe4db66d53b187c89d34be37"
+
+[[projects]]
+  name = "github.com/docker/distribution"
+  packages = [
+    "digestset",
+    "reference"
+  ]
+  revision = "2461543d988979529609e8cb6fca9ca190dc48da"
+  version = "v2.7.1"
+
+[[projects]]
+  name = "github.com/docker/docker"
+  packages = [
+    "api/types",
+    "api/types/blkiodev",
+    "api/types/container",
+    "api/types/events",
+    "api/types/filters",
+    "api/types/mount",
+    "api/types/network",
+    "api/types/reference",
+    "api/types/registry",
+    "api/types/strslice",
+    "api/types/swarm",
+    "api/types/time",
+    "api/types/versions",
+    "api/types/volume",
+    "client",
+    "pkg/tlsconfig"
+  ]
+  revision = "092cba3727bb9b4a2f0e922cd6c0f93ea270e363"
+  version = "v1.13.1"
+
+[[projects]]
+  name = "github.com/docker/go-connections"
+  packages = [
+    "nat",
+    "sockets",
+    "tlsconfig"
+  ]
+  revision = "7395e3f8aa162843a74ed6d48e79627d9792ac55"
+  version = "v0.4.0"
+
+[[projects]]
+  name = "github.com/docker/go-units"
+  packages = ["."]
+  revision = "47565b4f722fb6ceae66b95f853feed578a4a51c"
+  version = "v0.3.3"
 
 [[projects]]
   name = "github.com/go-sql-driver/mysql"
@@ -32,6 +101,18 @@
   version = "v1.0.0"
 
 [[projects]]
+  name = "github.com/opencontainers/go-digest"
+  packages = ["."]
+  revision = "279bed98673dd5bef374d3b6e4b09e2af76183bf"
+  version = "v1.0.0-rc1"
+
+[[projects]]
+  name = "github.com/pkg/errors"
+  packages = ["."]
+  revision = "ba968bfe8b2f7e042a574c888954fccecfa385b4"
+  version = "v0.8.1"
+
+[[projects]]
   name = "github.com/pmezard/go-difflib"
   packages = ["difflib"]
   revision = "792786c7400a136282c1664665ae0a8db921c6c2"
@@ -44,6 +125,29 @@
   version = "v1.3.0"
 
 [[projects]]
+  branch = "master"
+  name = "golang.org/x/crypto"
+  packages = ["md4"]
+  revision = "8dd112bcdc25174059e45e07517d9fc663123347"
+
+[[projects]]
+  branch = "master"
+  name = "golang.org/x/net"
+  packages = [
+    "context",
+    "context/ctxhttp",
+    "internal/socks",
+    "proxy"
+  ]
+  revision = "3a22650c66bd7f4fb6d1e8072ffd7b75c8a27898"
+
+[[projects]]
+  branch = "master"
+  name = "golang.org/x/sys"
+  packages = ["windows"]
+  revision = "983097b1a8a340cd1cc7df17d735154d89e10b1a"
+
+[[projects]]
   name = "google.golang.org/appengine"
   packages = ["cloudsql"]
   revision = "e9657d882bb81064595ca3b56cbe2546bbabf7b1"
@@ -52,6 +156,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "eba15840cdee08d56fd2d78e550140ff9bf9f26c94c3f6a354686446e7c8f5f3"
+  inputs-digest = "8612c7ad57fc92cd47e568c8140def511dea1975e5702cf8061fae2d876be268"
   solver-name = "gps-cdcl"
   solver-version = 1
